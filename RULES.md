@@ -64,8 +64,11 @@ These rules apply to all development on this project. Every agent, contributor, 
 ## 5. Daily Dev.to Post
 
 - Every day, publish one post on [dev.to](https://dev.to) about:
-  - A development challenge we encountered that day, OR
-  - A topic/technique we worked on (TDD, BDD, R2 uploads, Clerk webhooks, etc.)
+  - A general dev concept, technique, or pattern encountered that day
+  - e.g. "How upsert with onConflict works in Supabase", "TDD in TypeScript", "Clerk webhooks with Svix"
+- **Posts must be general and educational — NOT about ToolNexus specifically**
+  - ✅ "How to sync Clerk users to Supabase with webhooks"
+  - ❌ "Building ToolNexus: Wiring Clerk Auth to Supabase"
 - Post should be practical, honest, and developer-focused
 - Include code snippets where relevant
 - Tag appropriately: `nextjs`, `typescript`, `webdev`, `opensource`, etc.
@@ -89,3 +92,25 @@ These rules apply to all development on this project. Every agent, contributor, 
 - No `console.log` left in committed code
 - All API keys stay server-side only — never in client components
 - Secrets only in `.env.local` — never committed to git
+
+## 8. Manual UI Verification After Every Phase
+
+Before marking any phase complete and moving to the next:
+
+- Boot the dev server (`npm run dev`)
+- Visually check every page/route added in that phase using a browser
+- Verify: no blank pages, no broken routes, no console errors
+- Check: auth flows work end-to-end (sign in, sign up, protected routes)
+- Document what was verified in the commit message or a phase-complete note
+
+**Never assume the UI works just because the backend compiles.**
+
+## 9. Mobile-First Design
+
+Every page must be mobile responsive. Test on mobile before marking any phase complete.
+
+- Use Tailwind's responsive prefixes (`sm:`, `md:`, `lg:`) — start mobile, scale up
+- No fixed widths that overflow on small screens
+- Touch targets minimum 44px
+- Text readable without zooming (min 16px base)
+- Test at 390px width (iPhone) and 414px (Android) as baseline

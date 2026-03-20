@@ -14,3 +14,7 @@ Summary: One line about what the post covers.
 ## Posts
 
 <!-- Add new posts here, newest first -->
+
+## 2026-03-20 — [How to Sync Clerk Users to Supabase with Webhooks (TDD Approach)](https://dev.to/nareshipme/building-toolnexus-wiring-clerk-auth-to-supabase-with-tdd-1acl)
+Tags: nextjs, typescript, supabase, clerk
+Summary: How to sync Clerk users to Supabase via webhooks using a TDD approach. Covers mapClerkUserToDb, upsertUserFromClerk, Svix signature verification, and a Next.js 15 App Router gotcha with runtime = 'nodejs'.
