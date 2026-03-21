@@ -1,6 +1,10 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+let _genAI: GoogleGenerativeAI | undefined;
+function getGenAI(): GoogleGenerativeAI {
+  if (!_genAI) _genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  return _genAI;
+}
 
 export interface Highlight {
   start: number;
@@ -22,7 +26,7 @@ ${transcript}
 export async function generateHighlights(transcript: string): Promise<Highlight[]> {
   if (!transcript) throw new Error("transcript is required");
 
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = getGenAI().getGenerativeModel({ model: "gemini-1.5-flash" });
   const result = await model.generateContent(HIGHLIGHTS_PROMPT(transcript));
   const raw = result.response.text();
 

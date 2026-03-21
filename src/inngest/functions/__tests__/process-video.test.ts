@@ -2,37 +2,26 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Feature, Scenario, Given, When, Then, And } from "@/test/bdd";
 
 // --- Supabase mock ---
-const mockUpdate = vi.fn().mockReturnThis();
 const mockEq = vi.fn().mockResolvedValue({ error: null });
-const mockInsert = vi.fn().mockReturnThis();
-const mockSelect = vi.fn().mockReturnThis();
-const mockSingle = vi.fn().mockResolvedValue({ data: { id: "transcript-abc" }, error: null });
-const mockInsertHighlight = vi.fn().mockReturnThis();
-const mockSingleHighlight = vi
-  .fn()
-  .mockResolvedValue({ data: { id: "highlight-xyz" }, error: null });
+const mockUpdate = vi.fn().mockReturnValue({ eq: mockEq });
 
-const supabaseChain = {
-  update: mockUpdate,
-  eq: mockEq,
-  insert: mockInsert,
-  select: mockSelect,
-  single: mockSingle,
-};
+const mockSingle = vi.fn().mockResolvedValue({ data: { id: "transcript-abc" }, error: null });
+const mockSelect = vi.fn().mockReturnValue({ single: mockSingle });
+const mockInsert = vi.fn().mockReturnValue({ select: mockSelect });
+
+const mockSingleHighlight = vi.fn().mockResolvedValue({ data: { id: "highlight-xyz" }, error: null });
+const mockSelectHighlight = vi.fn().mockReturnValue({ single: mockSingleHighlight });
+const mockInsertHighlight = vi.fn().mockReturnValue({ select: mockSelectHighlight });
+
+const mockFrom = vi.fn((table: string) => {
+  if (table === "highlights") {
+    return { insert: mockInsertHighlight };
+  }
+  return { update: mockUpdate, insert: mockInsert };
+});
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: {
-    from: vi.fn((table: string) => {
-      if (table === "highlights") {
-        return {
-          insert: mockInsertHighlight,
-          select: vi.fn().mockReturnThis(),
-          single: mockSingleHighlight,
-        };
-      }
-      return supabaseChain;
-    }),
-  },
+  supabaseAdmin: { from: mockFrom },
 }));
 
 // --- R2 / AWS SDK mock ---
@@ -50,7 +39,9 @@ vi.mock("@/lib/r2", () => ({
 }));
 
 vi.mock("@aws-sdk/client-s3", () => ({
-  GetObjectCommand: vi.fn().mockImplementation((params) => ({ ...params, __type: "GetObject" })),
+  GetObjectCommand: class {
+    constructor(public params: unknown) {}
+  },
 }));
 
 // --- fs mock ---
@@ -73,33 +64,21 @@ vi.mock("fs", async (importOriginal) => {
 });
 
 // --- fluent-ffmpeg mock ---
-const mockFfmpegRun = vi.fn();
-const mockFfmpegOn = vi.fn();
-const mockFfmpegNoVideo = vi.fn().mockReturnThis();
-const mockFfmpegAudioCodec = vi.fn().mockReturnThis();
-const mockFfmpegOutput = vi.fn().mockReturnThis();
-
 vi.mock("fluent-ffmpeg", () => {
-  const ffmpegFn = vi.fn().mockReturnValue({
-    output: mockFfmpegOutput,
-    audioCodec: mockFfmpegAudioCodec,
-    noVideo: mockFfmpegNoVideo,
-    on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
-      if (event === "end") setTimeout(() => cb(), 0);
-      return {
-        output: mockFfmpegOutput,
-        audioCodec: mockFfmpegAudioCodec,
-        noVideo: mockFfmpegNoVideo,
-        on: vi.fn((event2: string, cb2: (...args: unknown[]) => void) => {
-          if (event2 === "end") setTimeout(() => cb2(), 0);
-          return { run: mockFfmpegRun };
-        }),
-        run: mockFfmpegRun,
-      };
-    }),
-    run: mockFfmpegRun,
+  // Build a single reusable chain object so .mockReturnValue works correctly
+  const chain: Record<string, ReturnType<typeof vi.fn>> = {};
+  const run = vi.fn();
+  const on = vi.fn((event: string, cb: () => void) => {
+    // Immediately invoke "end" so the Promise resolves synchronously
+    if (event === "end") cb();
+    return chain;
   });
-  return { default: ffmpegFn };
+  const noVideo = vi.fn().mockReturnValue({ on, run });
+  const audioCodec = vi.fn().mockReturnValue({ noVideo });
+  const output = vi.fn().mockReturnValue({ audioCodec });
+  Object.assign(chain, { output, audioCodec, noVideo, on, run });
+
+  return { default: vi.fn().mockReturnValue({ output }) };
 });
 
 // --- Groq mock ---
@@ -165,57 +144,61 @@ Feature("processVideo Inngest function", () => {
     mockGenerateHighlights.mockResolvedValue([
       { start: 0, end: 3, text: "Hello this is a test transcript.", reason: "Opening" },
     ]);
-    mockUpdate.mockReturnThis();
+    mockUpdate.mockReturnValue({ eq: mockEq });
     mockEq.mockResolvedValue({ error: null });
-    mockInsert.mockReturnThis();
-    mockSelect.mockReturnThis();
     mockSingle.mockResolvedValue({ data: { id: "transcript-abc" }, error: null });
-    mockInsertHighlight.mockReturnThis();
+    mockSelect.mockReturnValue({ single: mockSingle });
+    mockInsert.mockReturnValue({ select: mockSelect });
     mockSingleHighlight.mockResolvedValue({ data: { id: "highlight-xyz" }, error: null });
+    mockSelectHighlight.mockReturnValue({ single: mockSingleHighlight });
+    mockInsertHighlight.mockReturnValue({ select: mockSelectHighlight });
+    mockFrom.mockImplementation((table: string) => {
+      if (table === "highlights") return { insert: mockInsertHighlight };
+      return { update: mockUpdate, insert: mockInsert };
+    });
   });
 
   Scenario("Step 1: download-from-r2", () => {
     Given("a video/process event with projectId, r2Key, userId", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
-      expect(typeof processVideo).toBe("object");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
+      expect(typeof processVideoHandler).toBe("function");
     });
 
     When("the function runs step download-from-r2", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
       expect(step.run).toHaveBeenCalledWith("download-from-r2", expect.any(Function));
     });
 
     Then("it downloads from R2 and updates project status to processing", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
 
       expect(mockR2Send).toHaveBeenCalled();
 
-      const { supabaseAdmin } = await import("@/lib/supabase");
-      expect(supabaseAdmin.from).toHaveBeenCalledWith("projects");
+      expect(mockFrom).toHaveBeenCalledWith("projects");
       expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: "processing" }));
     });
   });
 
   Scenario("Step 2: extract-audio", () => {
     When("the function runs step extract-audio", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
       expect(step.run).toHaveBeenCalledWith("extract-audio", expect.any(Function));
     });
 
     Then("it updates project status to extracting_audio", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
 
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ status: "extracting_audio" })
@@ -225,29 +208,28 @@ Feature("processVideo Inngest function", () => {
 
   Scenario("Step 3: transcribe", () => {
     When("the function runs step transcribe", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
       expect(step.run).toHaveBeenCalledWith("transcribe", expect.any(Function));
     });
 
     Then("it calls transcribeAudio and saves to transcripts table", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
 
       expect(mockTranscribeAudio).toHaveBeenCalled();
-      const { supabaseAdmin } = await import("@/lib/supabase");
-      expect(supabaseAdmin.from).toHaveBeenCalledWith("transcripts");
+      expect(mockFrom).toHaveBeenCalledWith("transcripts");
     });
 
     And("it updates project status to transcribing", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
 
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ status: "transcribing" })
@@ -257,29 +239,28 @@ Feature("processVideo Inngest function", () => {
 
   Scenario("Step 4: generate-highlights", () => {
     When("the function runs step generate-highlights", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
       expect(step.run).toHaveBeenCalledWith("generate-highlights", expect.any(Function));
     });
 
     Then("it calls generateHighlights and saves to highlights table", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
 
       expect(mockGenerateHighlights).toHaveBeenCalledWith("Hello this is a test transcript.");
-      const { supabaseAdmin } = await import("@/lib/supabase");
-      expect(supabaseAdmin.from).toHaveBeenCalledWith("highlights");
+      expect(mockFrom).toHaveBeenCalledWith("highlights");
     });
 
     And("it updates project status to generating_highlights", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
 
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ status: "generating_highlights" })
@@ -289,18 +270,18 @@ Feature("processVideo Inngest function", () => {
 
   Scenario("Step 5: finalize", () => {
     When("the function runs step finalize", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
       expect(step.run).toHaveBeenCalledWith("finalize", expect.any(Function));
     });
 
     Then("it updates project status to completed", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
 
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ status: "completed" })
@@ -308,10 +289,10 @@ Feature("processVideo Inngest function", () => {
     });
 
     And("it returns projectId, status, transcriptId, highlightId", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
-      const result = await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      const result = await processVideoHandler(event, step);
 
       expect(result).toMatchObject({
         projectId: "project-123",
@@ -323,16 +304,14 @@ Feature("processVideo Inngest function", () => {
   });
 
   Scenario("Error handling", () => {
-    Given("R2 download fails", async () => {
+    Then("it sets status to failed with error_message when R2 download throws", async () => {
       mockR2Send.mockRejectedValue(new Error("R2 connection failed"));
-    });
 
-    Then("it sets project status to failed with error_message", async () => {
-      const { processVideo } = await import("@/inngest/functions/process-video");
+      const { processVideoHandler } = await import("@/inngest/functions/process-video");
       const step = makeMockStep();
       const event = makeMockEvent();
 
-      await (processVideo as unknown as { fn: (ctx: { event: typeof event; step: typeof step }) => Promise<unknown> }).fn({ event, step });
+      await processVideoHandler(event, step);
 
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({

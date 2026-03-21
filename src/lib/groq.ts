@@ -1,7 +1,11 @@
 import Groq from "groq-sdk";
 import fs from "fs";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+let _groq: Groq | undefined;
+function getGroqClient(): Groq {
+  if (!_groq) _groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  return _groq;
+}
 
 export interface TranscriptSegment {
   id: number;
@@ -18,7 +22,7 @@ export interface TranscriptResult {
 export async function transcribeAudio(audioPath: string): Promise<TranscriptResult> {
   if (!audioPath) throw new Error("audioPath is required");
 
-  const transcription = await groq.audio.transcriptions.create({
+  const transcription = await getGroqClient().audio.transcriptions.create({
     file: fs.createReadStream(audioPath),
     model: "whisper-large-v3",
     response_format: "verbose_json",
