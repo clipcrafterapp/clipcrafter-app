@@ -3,6 +3,12 @@
 import { use, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 
+interface Artifact {
+  url: string;
+  label: string;
+  available: boolean;
+}
+
 type ProjectStatus =
   | "pending"
   | "processing"
@@ -81,6 +87,7 @@ function statusBadgeClass(status: ProjectStatus): string {
 export function ProjectDetailContent({ id }: { id: string }) {
   const [data, setData] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [artifacts, setArtifacts] = useState<Record<string, Artifact> | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -88,11 +95,18 @@ export function ProjectDetailContent({ id }: { id: string }) {
       if (res.ok) {
         const json = await res.json();
         setData(json);
+        // Fetch artifacts once completed
+        if (json.status === "completed" && !artifacts) {
+          fetch(`/api/projects/${id}/artifacts`)
+            .then(r => r.ok ? r.json() : null)
+            .then(d => d && setArtifacts(d.artifacts))
+            .catch(() => undefined);
+        }
       }
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, artifacts]);
 
   useEffect(() => {
     fetchStatus();
@@ -238,6 +252,36 @@ export function ProjectDetailContent({ id }: { id: string }) {
             {/* Completed — transcript + highlights */}
             {data.status === "completed" && (
               <div className="flex flex-col gap-6 mt-2">
+
+                {/* Artifacts — download links */}
+                {artifacts && Object.keys(artifacts).length > 0 && (
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                    <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">📦 Outputs</h2>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(artifacts).map(([key, art]) => (
+                        art.available ? (
+                          <a
+                            key={key}
+                            href={art.url}
+                            download={key === "transcript" || key === "highlights" ? `${key}.json` : undefined}
+                            target={key === "video" || key === "audio" ? "_blank" : undefined}
+                            rel="noreferrer"
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm text-white transition-colors border border-gray-700"
+                          >
+                            <span>{key === "video" ? "🎬" : key === "audio" ? "🎵" : key === "transcript" ? "📝" : "✨"}</span>
+                            <span>{art.label}</span>
+                            <span className="text-gray-500 text-xs">↓</span>
+                          </a>
+                        ) : (
+                          <span key={key} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-900 text-sm text-gray-600 border border-gray-800">
+                            <span>{art.label}</span>
+                            <span className="text-xs">—</span>
+                          </span>
+                        )
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Processing log — what ran */}
                 {data.processing_log?.length > 0 && (

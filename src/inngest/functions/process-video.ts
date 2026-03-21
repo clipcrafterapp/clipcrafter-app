@@ -119,6 +119,19 @@ export async function processVideoHandler(
       await updateProjectStatus(projectId, { status: "extracting_audio" });
       logger.log({ step: "extract-audio", provider: "ffmpeg (local)", status: "ok" });
       await extractAudioFromVideo(videoPath, audioPath);
+
+      // Upload audio to R2 so it can be linked in the UI
+      const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+      const audioBuffer = await fs.readFile(audioPath);
+      const audioKey = `audio/${projectId}/audio.mp3`;
+      await r2Client.send(new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: audioKey,
+        Body: audioBuffer,
+        ContentType: "audio/mpeg",
+      }));
+      await updateProjectStatus(projectId, { audio_key: audioKey });
+      logger.log({ step: "extract-audio", provider: "ffmpeg → R2", detail: `${(audioBuffer.length / 1024 / 1024).toFixed(1)}MB uploaded`, status: "ok" });
     });
 
     // Step 3 — transcribe
