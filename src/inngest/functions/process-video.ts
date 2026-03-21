@@ -60,6 +60,8 @@ async function downloadYouTubeVideo(url: string, outputPath: string): Promise<vo
     "--merge-output-format", "mp4",
     "--output", outputPath,
     "--no-playlist",
+    "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "--extractor-args", "youtube:player_client=android",
     url,
   ]);
 }
@@ -82,13 +84,9 @@ export interface ProcessVideoEventData {
   userId: string;
 }
 
-export interface ProcessVideoStep {
-  run: <T>(name: string, fn: () => Promise<T>) => Promise<T>;
-}
-
 export async function processVideoHandler(
   event: { data: ProcessVideoEventData },
-  step: ProcessVideoStep
+  step: any
 ): Promise<Record<string, unknown>> {
   const { projectId, r2Key } = event.data;
 
@@ -196,5 +194,5 @@ export async function processVideoHandler(
 export const processVideo = inngest.createFunction(
   { id: "process-video", retries: 3 },
   { event: "video/process" },
-  async ({ event, step }) => processVideoHandler(event, step)
+  async ({ event, step }) => processVideoHandler(event as { data: ProcessVideoEventData }, step)
 );

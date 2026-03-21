@@ -8,10 +8,20 @@
  * Docs: https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/speech-to-text/batch-api
  */
 
-import { TranscriptResult } from "@/lib/groq";
 import fs from "fs";
 
-export { TranscriptResult };
+export interface TranscriptSegment {
+  id: number;
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface TranscriptResult {
+  text: string;
+  segments: TranscriptSegment[];
+  provider?: string;
+}
 
 const SARVAM_API_KEY = process.env.SARVAM_API_KEY ?? "";
 const SARVAM_BASE = "https://api.sarvam.ai";
