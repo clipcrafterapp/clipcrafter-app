@@ -72,9 +72,9 @@ export async function processVideoHandler(
 ): Promise<Record<string, unknown>> {
   const { projectId, r2Key } = event.data;
 
-  const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const videoPath = path.join(os.tmpdir(), `video-${uniqueSuffix}.mp4`);
-  const audioPath = path.join(os.tmpdir(), `audio-${uniqueSuffix}.mp3`);
+  // Use projectId for stable paths across step re-invocations (Inngest runs each step in a fresh context)
+  const videoPath = path.join(os.tmpdir(), `clipcrafter-video-${projectId}.mp4`);
+  const audioPath = path.join(os.tmpdir(), `clipcrafter-audio-${projectId}.mp3`);
 
   let transcriptId: string | undefined;
   let highlightId: string | undefined;
