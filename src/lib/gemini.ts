@@ -6,6 +6,19 @@ function getGenAI(): GoogleGenerativeAI {
   return _genAI;
 }
 
+// Model preference order — tries each in sequence until one succeeds.
+// Override via GEMINI_MODEL env var (e.g. "gemini-2.5-pro") to skip fallback.
+const MODEL_FALLBACK_CHAIN = [
+  process.env.GEMINI_MODEL,          // env override (highest priority)
+  "gemini-2.0-flash",                // current stable
+  "gemini-2.0-flash-lite",           // lighter variant
+  "gemini-1.5-flash",                // previous gen fallback
+  "gemini-1.5-flash-latest",         // alias, sometimes available when specific isn't
+].filter(Boolean) as string[];
+
+// Deduplicate while preserving order
+const MODELS = [...new Set(MODEL_FALLBACK_CHAIN)];
+
 export interface Highlight {
   start: number;
   end: number;
@@ -26,10 +39,33 @@ ${transcript}
 export async function generateHighlights(transcript: string): Promise<Highlight[]> {
   if (!transcript) throw new Error("transcript is required");
 
-  const model = getGenAI().getGenerativeModel({ model: "gemini-1.5-flash" });
-  const result = await model.generateContent(HIGHLIGHTS_PROMPT(transcript));
-  const raw = result.response.text();
+  let lastError: Error | null = null;
 
-  const cleaned = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-  return JSON.parse(cleaned) as Highlight[];
+  for (const modelName of MODELS) {
+    try {
+      const model = getGenAI().getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(HIGHLIGHTS_PROMPT(transcript));
+      const raw = result.response.text();
+      const cleaned = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      const parsed = JSON.parse(cleaned) as Highlight[];
+      console.log(`Gemini highlights generated with model: ${modelName}`);
+      return parsed;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Only retry on model-related errors (deprecated, not found, quota)
+      const isRetryable =
+        msg.includes("deprecated") ||
+        msg.includes("not found") ||
+        msg.includes("404") ||
+        msg.includes("RESOURCE_EXHAUSTED") ||
+        msg.includes("quota");
+
+      console.warn(`Gemini model "${modelName}" failed: ${msg}`);
+      lastError = err instanceof Error ? err : new Error(msg);
+
+      if (!isRetryable) throw lastError; // auth errors, bad prompts etc — don't retry
+    }
+  }
+
+  throw lastError ?? new Error("All Gemini models failed");
 }
