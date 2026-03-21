@@ -26,11 +26,20 @@ interface Highlight {
   reason: string;
 }
 
+interface ProcessingLogEntry {
+  step: string;
+  provider?: string;
+  detail?: string;
+  status: "ok" | "error" | "fallback";
+  ts: string;
+}
+
 interface StatusData {
   id: string;
   status: ProjectStatus;
   error_message: string | null;
   completed_at: string | null;
+  processing_log: ProcessingLogEntry[];
   transcript: { id: string; segments: Segment[] } | null;
   highlights: { id: string; segments: Highlight[] } | null;
 }
@@ -229,6 +238,35 @@ export function ProjectDetailContent({ id }: { id: string }) {
             {/* Completed — transcript + highlights */}
             {data.status === "completed" && (
               <div className="flex flex-col gap-6 mt-2">
+
+                {/* Processing log — what ran */}
+                {data.processing_log?.length > 0 && (
+                  <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                    <h2 className="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wide">⚙️ How it ran</h2>
+                    <div className="flex flex-col gap-2">
+                      {data.processing_log.map((entry, i) => (
+                        <div key={i} className="flex items-start gap-3 text-sm">
+                          <span className={`shrink-0 w-2 h-2 rounded-full mt-1.5 ${
+                            entry.status === "ok" ? "bg-green-500" :
+                            entry.status === "fallback" ? "bg-yellow-500" : "bg-red-500"
+                          }`} />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-gray-300 font-medium capitalize">{entry.step}</span>
+                            {entry.provider && (
+                              <span className="ml-2 text-violet-400 text-xs font-mono">{entry.provider}</span>
+                            )}
+                            {entry.detail && (
+                              <span className="ml-2 text-gray-500 text-xs truncate">{entry.detail}</span>
+                            )}
+                          </div>
+                          <span className="text-gray-600 text-xs shrink-0">
+                            {new Date(entry.ts).toLocaleTimeString()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Highlights */}
                 {data.highlights?.segments?.length ? (

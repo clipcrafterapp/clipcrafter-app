@@ -23,6 +23,7 @@ export interface TranscriptSegment {
 export interface TranscriptResult {
   text: string;
   segments: TranscriptSegment[];
+  provider?: string; // which backend actually handled this
 }
 
 // Groq hard limit is 25MB. We target 20MB chunks to be safe.

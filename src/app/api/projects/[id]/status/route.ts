@@ -20,7 +20,7 @@ export async function GET(
 
   const { data: project, error } = await supabaseAdmin
     .from("projects")
-    .select("id, user_id, status, error_message, completed_at")
+    .select("id, user_id, status, error_message, completed_at, processing_log")
     .eq("id", id)
     .single();
 
@@ -62,6 +62,7 @@ export async function GET(
       status: project.status,
       error_message: project.error_message ?? null,
       completed_at: project.completed_at ?? null,
+      processing_log: project.processing_log ?? [],
       transcript,
       highlights,
     },

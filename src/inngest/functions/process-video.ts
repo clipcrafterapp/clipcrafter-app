@@ -20,6 +20,26 @@ async function updateProjectStatus(
   await supabaseAdmin.from("projects").update(fields).eq("id", projectId);
 }
 
+type LogEntry = { step: string; provider?: string; detail?: string; status: "ok" | "error" | "fallback"; ts: string };
+
+function makeLogger(projectId: string) {
+  const entries: LogEntry[] = [];
+  return {
+    log(entry: Omit<LogEntry, "ts">) {
+      const e = { ...entry, ts: new Date().toISOString() };
+      entries.push(e);
+      console.log(
+        `[${projectId}] ${e.step} | provider: ${e.provider ?? "-"} | ${e.status}${e.detail ? " | " + e.detail : ""}`
+      );
+    },
+    async flush() {
+      if (!entries.length) return;
+      await supabaseAdmin.from("projects").update({ processing_log: entries }).eq("id", projectId);
+    },
+    getEntries() { return entries; },
+  };
+}
+
 async function downloadR2Object(r2Key: string): Promise<Buffer> {
   const command = new GetObjectCommand({ Bucket: R2_BUCKET, Key: r2Key });
   const response = await r2Client.send(command);
@@ -76,6 +96,7 @@ export async function processVideoHandler(
   const videoPath = path.join(os.tmpdir(), `clipcrafter-video-${projectId}.mp4`);
   const audioPath = path.join(os.tmpdir(), `clipcrafter-audio-${projectId}.mp3`);
 
+  const logger = makeLogger(projectId);
   let transcriptId: string | undefined;
   let highlightId: string | undefined;
 
@@ -84,9 +105,10 @@ export async function processVideoHandler(
     await step.run("download-from-r2", async () => {
       await updateProjectStatus(projectId, { status: "processing" });
       if (isYouTubeUrl(r2Key)) {
-        // r2Key holds the YouTube URL for youtube-type projects
+        logger.log({ step: "download", provider: "yt-dlp", detail: r2Key, status: "ok" });
         await downloadYouTubeVideo(r2Key, videoPath);
       } else {
+        logger.log({ step: "download", provider: "Cloudflare R2", detail: r2Key, status: "ok" });
         const buffer = await downloadR2Object(r2Key);
         await fs.writeFile(videoPath, buffer);
       }
@@ -95,13 +117,18 @@ export async function processVideoHandler(
     // Step 2 — extract-audio
     await step.run("extract-audio", async () => {
       await updateProjectStatus(projectId, { status: "extracting_audio" });
+      logger.log({ step: "extract-audio", provider: "ffmpeg (local)", status: "ok" });
       await extractAudioFromVideo(videoPath, audioPath);
     });
 
     // Step 3 — transcribe
     const transcript = await step.run("transcribe", async () => {
       await updateProjectStatus(projectId, { status: "transcribing" });
+      const provider = process.env.TRANSCRIPTION_PROVIDER ?? "groq";
+      logger.log({ step: "transcribe", provider: `${provider} (attempting)`, status: "ok" });
       const result = await transcribeAudio(audioPath);
+      // transcribe.ts logs which provider actually ran (including fallback)
+      logger.log({ step: "transcribe", provider: result.provider ?? provider, detail: `${result.segments.length} segments`, status: "ok" });
 
       const { data } = await supabaseAdmin
         .from("transcripts")
@@ -119,6 +146,7 @@ export async function processVideoHandler(
       const highlights = await generateHighlights(
         (transcript as { text: string }).text
       );
+      logger.log({ step: "generate-highlights", provider: `Gemini (${process.env.GEMINI_MODEL ?? "2.5-flash fallback chain"})`, detail: `${highlights.length} highlights`, status: "ok" });
 
       const { data } = await supabaseAdmin
         .from("highlights")
@@ -133,13 +161,15 @@ export async function processVideoHandler(
     await step.run("finalize", async () => {
       await fs.unlink(videoPath).catch(() => undefined);
       await fs.unlink(audioPath).catch(() => undefined);
+      logger.log({ step: "finalize", provider: "system", status: "ok" });
+      await logger.flush(); // write all step logs to DB
       await updateProjectStatus(projectId, {
         status: "completed",
         completed_at: new Date().toISOString(),
       });
     });
 
-    return { projectId, status: "completed", transcriptId, highlightId };
+    return { projectId, status: "completed", transcriptId, highlightId, processingLog: logger.getEntries() };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     await supabaseAdmin

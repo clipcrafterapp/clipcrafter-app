@@ -31,17 +31,21 @@ const SARVAM_MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB max per request
 export async function transcribeAudio(audioPath: string): Promise<TranscriptResult> {
   if (PROVIDER === "sarvam") {
     try {
-      return await transcribeWithSarvam(audioPath);
+      const result = await transcribeWithSarvam(audioPath);
+      return { ...result, provider: "Sarvam Saarika v2.5" };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`Sarvam transcription failed, falling back to Modal: ${msg}`);
-      return await transcribeWithModal(audioPath);
+      console.warn(`Sarvam transcription failed → falling back to Modal: ${msg}`);
+      const result = await transcribeWithModal(audioPath);
+      return { ...result, provider: `Modal faster-whisper (Sarvam fallback: ${msg.slice(0, 80)})` };
     }
   }
   if (PROVIDER === "modal") {
-    return transcribeWithModal(audioPath);
+    const result = await transcribeWithModal(audioPath);
+    return { ...result, provider: "Modal faster-whisper" };
   }
-  return groqTranscribeAudio(audioPath);
+  const result = await groqTranscribeAudio(audioPath);
+  return { ...result, provider: "Groq Whisper large-v3" };
 }
 
 // ─── Sarvam (Primary for Indian languages) ───────────────────────────────────
