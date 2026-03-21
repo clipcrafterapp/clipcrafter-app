@@ -8,7 +8,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { inngest } from "@/lib/inngest";
 import { supabaseAdmin } from "@/lib/supabase";
 import { r2Client, R2_BUCKET } from "@/lib/r2";
-import { transcribeAudio } from "@/lib/groq";
+import { transcribeAudio } from "@/lib/transcribe";
 import { generateHighlights } from "@/lib/gemini";
 
 const execFileAsync = promisify(execFile);
