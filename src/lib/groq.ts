@@ -25,23 +25,99 @@ export interface TranscriptResult {
   segments: TranscriptSegment[];
 }
 
-const GROQ_MAX_BYTES = 24 * 1024 * 1024; // 24MB (leave 1MB headroom under 25MB limit)
+// Groq hard limit is 25MB. We target 20MB chunks to be safe.
+const GROQ_MAX_BYTES = 24 * 1024 * 1024;
+// Each chunk = 20 minutes of audio. At 32kbps mono that's ~4.8MB — well under limit.
+const CHUNK_DURATION_SEC = 20 * 60; // 20 minutes
 
 /**
- * Re-encode audio to lower bitrate mono MP3 to fit under Groq's 25MB limit.
- * Uses ffmpeg to convert to 64k mono, which is ~28MB/hour — enough for most videos.
+ * Get audio duration in seconds using ffprobe.
  */
-async function compressAudio(inputPath: string): Promise<string> {
-  const outputPath = inputPath.replace(/\.mp3$/, "-compressed.mp3");
-  await execFileAsync("ffmpeg", [
-    "-i", inputPath,
-    "-ar", "16000",     // 16kHz sample rate (sufficient for speech)
-    "-ac", "1",         // mono
-    "-b:a", "32k",      // 32kbps — ~14MB/hour, well under limit
-    "-y",               // overwrite
-    outputPath,
+async function getAudioDurationSec(audioPath: string): Promise<number> {
+  const { stdout } = await execFileAsync("ffprobe", [
+    "-v", "error",
+    "-show_entries", "format=duration",
+    "-of", "default=noprint_wrappers=1:nokey=1",
+    audioPath,
   ]);
-  return outputPath;
+  return parseFloat(stdout.trim());
+}
+
+/**
+ * Split audio into fixed-duration chunks using ffmpeg.
+ * Returns array of chunk file paths.
+ */
+async function splitAudioIntoChunks(
+  audioPath: string,
+  chunkDurationSec: number
+): Promise<string[]> {
+  const dir = path.dirname(audioPath);
+  const base = path.basename(audioPath, ".mp3");
+  const pattern = path.join(dir, `${base}-chunk-%03d.mp3`);
+
+  await execFileAsync("ffmpeg", [
+    "-i", audioPath,
+    "-f", "segment",
+    "-segment_time", String(chunkDurationSec),
+    "-ar", "16000",   // 16kHz — sufficient for speech
+    "-ac", "1",       // mono
+    "-b:a", "32k",    // 32kbps — ~4.8MB per 20min chunk
+    "-reset_timestamps", "1",
+    "-y",
+    pattern,
+  ]);
+
+  // Collect the output chunks in order
+  const chunkFiles: string[] = [];
+  let i = 0;
+  while (true) {
+    const chunkPath = path.join(dir, `${base}-chunk-${String(i).padStart(3, "0")}.mp3`);
+    if (!fs.existsSync(chunkPath)) break;
+    chunkFiles.push(chunkPath);
+    i++;
+  }
+
+  return chunkFiles;
+}
+
+/**
+ * Transcribe a single audio file via Groq Whisper.
+ * timeOffsetSec is added to all segment timestamps (for stitching chunks).
+ */
+async function transcribeChunk(
+  filePath: string,
+  timeOffsetSec: number
+): Promise<TranscriptResult> {
+  let transcription;
+  try {
+    transcription = await getGroqClient().audio.transcriptions.create({
+      file: fs.createReadStream(filePath),
+      model: "whisper-large-v3",
+      response_format: "verbose_json",
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const retryMs = parseRetryAfterMs(msg);
+    if (retryMs) {
+      throw new Error(
+        `Groq rate limit — retry after ${Math.ceil(retryMs / 1000)}s. Original: ${msg}`
+      );
+    }
+    throw err;
+  }
+
+  const rawSegments =
+    (transcription as unknown as { segments?: TranscriptSegment[] }).segments ?? [];
+
+  return {
+    text: transcription.text,
+    segments: rawSegments.map((seg, idx) => ({
+      id: seg.id ?? idx,
+      start: (seg.start ?? 0) + timeOffsetSec,
+      end: (seg.end ?? 0) + timeOffsetSec,
+      text: seg.text,
+    })),
+  };
 }
 
 /**
@@ -55,51 +131,55 @@ function parseRetryAfterMs(message: string): number | null {
   return null;
 }
 
+/**
+ * Transcribe an audio file, automatically chunking if it's too large.
+ *
+ * Strategy:
+ * 1. If file is under 24MB → send directly (fast path)
+ * 2. Otherwise → split into 20-min chunks at 32kbps mono, transcribe each, stitch results
+ */
 export async function transcribeAudio(audioPath: string): Promise<TranscriptResult> {
   if (!audioPath) throw new Error("audioPath is required");
 
-  let filePath = audioPath;
-
-  // Check file size — compress if over Groq's limit
   const stats = fs.statSync(audioPath);
-  if (stats.size > GROQ_MAX_BYTES) {
-    console.log(`Audio file ${stats.size} bytes > 24MB limit, compressing...`);
-    filePath = await compressAudio(audioPath);
-    const newStats = fs.statSync(filePath);
-    console.log(`Compressed to ${newStats.size} bytes`);
+
+  // Fast path: file is small enough to send directly
+  if (stats.size <= GROQ_MAX_BYTES) {
+    console.log(`Transcribing ${(stats.size / 1024 / 1024).toFixed(1)}MB directly`);
+    return transcribeChunk(audioPath, 0);
   }
 
-  let transcription;
-  try {
-    transcription = await getGroqClient().audio.transcriptions.create({
-      file: fs.createReadStream(filePath),
-      model: "whisper-large-v3",
-      response_format: "verbose_json",
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const retryMs = parseRetryAfterMs(msg);
-    if (retryMs) {
-      // Surface a clear error so Inngest retries after the rate limit window
-      throw new Error(`Groq rate limit — retry after ${Math.ceil(retryMs / 1000)}s. Original: ${msg}`);
-    }
-    throw err;
+  // Slow path: split into chunks
+  const durationSec = await getAudioDurationSec(audioPath);
+  const estimatedChunks = Math.ceil(durationSec / CHUNK_DURATION_SEC);
+  console.log(
+    `Audio ${(stats.size / 1024 / 1024).toFixed(1)}MB, ${Math.round(durationSec / 60)}min — splitting into ~${estimatedChunks} chunks of ${CHUNK_DURATION_SEC / 60}min`
+  );
+
+  const chunkFiles = await splitAudioIntoChunks(audioPath, CHUNK_DURATION_SEC);
+  console.log(`Created ${chunkFiles.length} chunks`);
+
+  const results: TranscriptResult[] = [];
+  for (let i = 0; i < chunkFiles.length; i++) {
+    const timeOffsetSec = i * CHUNK_DURATION_SEC;
+    console.log(
+      `Transcribing chunk ${i + 1}/${chunkFiles.length} (offset: ${timeOffsetSec}s)`
+    );
+    const result = await transcribeChunk(chunkFiles[i], timeOffsetSec);
+    results.push(result);
+
+    // Clean up chunk immediately after transcription to save disk space
+    fs.unlink(chunkFiles[i], () => undefined);
   }
 
-  // Clean up compressed file if we created one
-  if (filePath !== audioPath) {
-    fs.unlink(filePath, () => undefined);
-  }
+  // Stitch all chunks together
+  const allSegments = results.flatMap((r) => r.segments).map((seg, idx) => ({
+    ...seg,
+    id: idx, // re-index globally
+  }));
 
   return {
-    text: transcription.text,
-    segments: ((transcription as unknown as { segments?: TranscriptSegment[] }).segments ?? []).map(
-      (seg: TranscriptSegment) => ({
-        id: seg.id,
-        start: seg.start,
-        end: seg.end,
-        text: seg.text,
-      })
-    ),
+    text: results.map((r) => r.text).join(" "),
+    segments: allSegments,
   };
 }
