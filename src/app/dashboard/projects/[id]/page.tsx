@@ -154,7 +154,9 @@ export function ProjectDetailContent({ id }: { id: string }) {
 
   // Clips state
   const [clips, setClips] = useState<Clip[] | null>(null);
-  const [clipsLoading, setClipsLoading] = useState(false);
+  const [clipsStatus, setClipsStatus] = useState<"idle" | "generating" | "done" | "failed" | string>("idle");
+  const [topicMap, setTopicMap] = useState<Array<{ topic: string; summary: string; segments: Array<{ start: number; end: number; text: string }> }> | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
   // Highlight generation options
@@ -230,41 +232,46 @@ export function ProjectDetailContent({ id }: { id: string }) {
     return () => clearInterval(interval);
   }, [data, fetchStatus]);
 
-  // Auto-load clips when completed
+  // Fetch clips helper — reads status + topic_map too
+  const fetchClips = useCallback(async () => {
+    const r = await fetch(`/api/projects/${id}/clips`);
+    if (!r.ok) return;
+    const d = await r.json();
+    const status = d.clips_status ?? "idle";
+    setClipsStatus(status);
+    if (d.topic_map) setTopicMap(d.topic_map);
+    if (d.clips && d.clips.length > 0) {
+      const sorted = [...d.clips].sort((a: Clip, b: Clip) => b.score - a.score);
+      setClips(sorted);
+      if (!selectedClipId) {
+        setSelectedClipId(sorted[0].id);
+        if (videoRef.current) videoRef.current.currentTime = sorted[0].start_sec;
+      }
+    }
+    return status;
+  }, [id, selectedClipId]);
+
+  // Auto-load clips when completed; auto-generate on first visit
   useEffect(() => {
-    if (data?.status !== "completed" || clips !== null || clipsLoading) return;
-    setClipsLoading(true);
-    fetch(`/api/projects/${id}/clips`)
-      .then(r => r.ok ? r.json() : null)
-      .then(async d => {
-        if (d && d.clips && d.clips.length > 0) {
-          const sorted = [...d.clips].sort((a: Clip, b: Clip) => b.score - a.score);
-          setClips(sorted);
-          setSelectedClipId(sorted[0].id);
-          if (videoRef.current) {
-            videoRef.current.currentTime = sorted[0].start_sec;
-          }
-        } else {
-          // Auto-generate on first visit
-          const genRes = await fetch(`/api/projects/${id}/clips`, { method: "POST" });
-          if (genRes.ok) {
-            const genData = await genRes.json();
-            const sorted = [...(genData.clips ?? [])].sort((a: Clip, b: Clip) => b.score - a.score);
-            setClips(sorted);
-            if (sorted.length > 0) {
-              setSelectedClipId(sorted[0].id);
-              if (videoRef.current) {
-                videoRef.current.currentTime = sorted[0].start_sec;
-              }
-            }
-          } else {
-            setClips([]);
-          }
-        }
-      })
-      .catch(() => setClips([]))
-      .finally(() => setClipsLoading(false));
-  }, [data?.status, clips, id, clipsLoading]);
+    if (data?.status !== "completed" || clips !== null || clipsStatus !== "idle") return;
+    fetchClips().then(async status => {
+      if (status === "idle" || !status) {
+        // No clips yet — auto-generate
+        await fetch(`/api/projects/${id}/clips`, { method: "POST" });
+        setClipsStatus("generating");
+      }
+    });
+  }, [data?.status, clips, id, clipsStatus, fetchClips]);
+
+  // Poll while generating
+  useEffect(() => {
+    if (clipsStatus !== "generating") return;
+    const interval = setInterval(async () => {
+      const status = await fetchClips();
+      if (status !== "generating") clearInterval(interval);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [clipsStatus, fetchClips]);
 
   async function handleRetry() {
     await fetch(`/api/projects/${id}/process`, { method: "POST" });
@@ -281,29 +288,25 @@ export function ProjectDetailContent({ id }: { id: string }) {
   }
 
   async function handleGenerateClips() {
-    setClipsLoading(true);
+    // trigger generating state;
     try {
       const body: Record<string, unknown> = clipCount === "auto" ? {} : { count: clipCount };
       if (clipPrompt.trim()) body.prompt = clipPrompt.trim();
       if (clipTargetDuration && Number(clipTargetDuration) > 0) body.targetDuration = Number(clipTargetDuration);
+      // Reset clips so we show loading state while Inngest job runs
+      setClips(null);
+      setTopicMap(null);
+      setSelectedTopic(null);
       const res = await fetch(`/api/projects/${id}/clips`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        const json = await res.json();
-        const sorted = [...(json.clips ?? [])].sort((a: Clip, b: Clip) => b.score - a.score);
-        setClips(sorted);
-        if (sorted.length > 0) {
-          setSelectedClipId(sorted[0].id);
-          if (videoRef.current) {
-            videoRef.current.currentTime = sorted[0].start_sec;
-          }
-        }
+        setClipsStatus("generating"); // polling effect takes over
       }
     } finally {
-      setClipsLoading(false);
+      ;
     }
   }
 
@@ -660,11 +663,11 @@ export function ProjectDetailContent({ id }: { id: string }) {
                       <button
                         type="button"
                         onClick={handleGenerateClips}
-                        disabled={clipsLoading}
+                        disabled={clipsStatus === "generating"}
                         data-testid="generate-clips-btn"
                         className="px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-semibold text-white transition-colors min-h-[44px]"
                       >
-                        {clipsLoading ? "Generating…" : clips && clips.length > 0 ? "Regenerate" : "Generate Clips"}
+                        {clipsStatus === "generating" ? "Generating…" : clips && clips.length > 0 ? "Regenerate" : "Generate Clips"}
                       </button>
                     </div>
 
@@ -675,7 +678,7 @@ export function ProjectDetailContent({ id }: { id: string }) {
                         <select
                           value={clipCount}
                           onChange={e => setClipCount(e.target.value === "auto" ? "auto" : Number(e.target.value))}
-                          disabled={clipsLoading}
+                          disabled={clipsStatus === "generating"}
                           className="bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-lg px-2 py-1.5 min-h-[36px]"
                         >
                           <option value="auto">Auto</option>
@@ -689,7 +692,7 @@ export function ProjectDetailContent({ id }: { id: string }) {
                           placeholder="any"
                           value={clipTargetDuration}
                           onChange={e => setClipTargetDuration(e.target.value)}
-                          disabled={clipsLoading}
+                          disabled={clipsStatus === "generating"}
                           className="w-16 bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-lg px-2 py-1.5 min-h-[36px]"
                         />
                       </div>
@@ -698,13 +701,13 @@ export function ProjectDetailContent({ id }: { id: string }) {
                         placeholder="Search topic (optional)…"
                         value={clipPrompt}
                         onChange={e => setClipPrompt(e.target.value)}
-                        disabled={clipsLoading}
+                        disabled={clipsStatus === "generating"}
                         className="flex-1 min-w-[140px] bg-gray-800 border border-gray-700 text-gray-300 placeholder-gray-600 text-xs rounded-lg px-3 py-1.5 min-h-[36px]"
                       />
                     </div>
 
                     {/* Skeleton loading */}
-                    {clipsLoading && (
+                    {clipsStatus === "generating" && (
                       <div className="flex flex-col gap-3">
                         {[0, 1, 2].map(i => (
                           <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-4 animate-pulse">
@@ -723,7 +726,7 @@ export function ProjectDetailContent({ id }: { id: string }) {
                     )}
 
                     {/* Empty state */}
-                    {!clipsLoading && (clips === null || clips.length === 0) && (
+                    {clipsStatus !== "generating" && (clips === null || clips.length === 0) && (
                       <div className="text-center py-14 bg-gray-900 border border-gray-800 rounded-xl flex flex-col items-center gap-4">
                         <p className="text-gray-400 text-sm">No clips yet — generate AI clips from your highlights</p>
                         <button
@@ -736,10 +739,44 @@ export function ProjectDetailContent({ id }: { id: string }) {
                       </div>
                     )}
 
+                    {/* Topic filter chips */}
+                    {topicMap && topicMap.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTopic(null)}
+                          className={`text-xs px-3 py-1.5 rounded-full border transition-colors min-h-[32px] ${
+                            selectedTopic === null
+                              ? "bg-violet-600 border-violet-600 text-white"
+                              : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
+                          }`}
+                        >
+                          All
+                        </button>
+                        {topicMap.map(t => (
+                          <button
+                            key={t.topic}
+                            type="button"
+                            onClick={() => setSelectedTopic(selectedTopic === t.topic ? null : t.topic)}
+                            title={t.summary}
+                            className={`text-xs px-3 py-1.5 rounded-full border transition-colors min-h-[32px] ${
+                              selectedTopic === t.topic
+                                ? "bg-violet-600 border-violet-600 text-white"
+                                : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
+                            }`}
+                          >
+                            {t.topic}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Clips list */}
-                    {!clipsLoading && sortedClips && sortedClips.length > 0 && (
+                    {clipsStatus !== "generating" && sortedClips && sortedClips.length > 0 && (
                       <div className="flex flex-col gap-3">
-                        {sortedClips.map(clip => {
+                        {sortedClips
+                          .filter(clip => !selectedTopic || clip.topic === selectedTopic)
+                          .map(clip => {
                           const isSelected = clip.id === selectedClipId;
                           const visibleTags = clip.hashtags?.slice(0, 3) ?? [];
                           const extraTagCount = (clip.hashtags?.length ?? 0) - 3;
@@ -872,7 +909,7 @@ export function ProjectDetailContent({ id }: { id: string }) {
                           <button
                             type="button"
                             onClick={handleGenerateClips}
-                            disabled={clipsLoading}
+                            disabled={clipsStatus === "generating"}
                             className="text-xs text-gray-600 hover:text-gray-400 transition-colors disabled:opacity-50"
                           >
                             ↺ Regenerate Clips
