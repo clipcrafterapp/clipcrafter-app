@@ -90,7 +90,7 @@ export async function processVideoHandler(
   event: { data: ProcessVideoEventData },
   step: any
 ): Promise<Record<string, unknown>> {
-  const { projectId, r2Key } = event.data;
+  const { projectId } = event.data;
 
   // Use projectId for stable paths across step re-invocations (Inngest runs each step in a fresh context)
   const videoPath = path.join(os.tmpdir(), `clipcrafter-video-${projectId}.mp4`);
@@ -101,12 +101,15 @@ export async function processVideoHandler(
   let highlightId: string | undefined;
 
   try {
-    // Check if this project already has a transcript (reused from another project)
+    // Always re-read r2_key from DB — never trust the event payload (may be stale/truncated on retries)
     const { data: projectData } = await supabaseAdmin
       .from("projects")
-      .select("status, audio_key")
+      .select("status, audio_key, r2_key")
       .eq("id", projectId)
       .single();
+
+    const r2Key: string = projectData?.r2_key ?? "";
+    if (!r2Key) throw new Error(`Project ${projectId} has no r2_key in DB`);
 
     const hasExistingTranscript = projectData?.status === "transcribed";
 
