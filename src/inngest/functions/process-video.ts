@@ -156,6 +156,20 @@ export async function processVideoHandler(
       if (isYouTubeUrl(r2Key)) {
         logger.log({ step: "download", provider: "yt-dlp", detail: r2Key, status: "ok" });
         await downloadYouTubeVideo(r2Key, videoPath);
+
+        // Upload the downloaded video to R2 so it can be played back in the browser
+        const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+        const videoBuffer = await fs.readFile(videoPath);
+        const videoR2Key = `videos/${projectId}/video.mp4`;
+        await r2Client.send(new PutObjectCommand({
+          Bucket: R2_BUCKET,
+          Key: videoR2Key,
+          Body: videoBuffer,
+          ContentType: "video/mp4",
+        }));
+        // Update r2_key to the actual R2 key so artifacts API returns a presigned URL
+        await updateProjectStatus(projectId, { r2_key: videoR2Key });
+        logger.log({ step: "download", provider: "yt-dlp → R2", detail: `${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB uploaded`, status: "ok" });
       } else {
         logger.log({ step: "download", provider: "Cloudflare R2", detail: r2Key, status: "ok" });
         const buffer = await downloadR2Object(r2Key);
