@@ -155,7 +155,6 @@ export function ProjectDetailContent({ id }: { id: string }) {
   // Clips state
   const [clips, setClips] = useState<Clip[] | null>(null);
   const [clipsStatus, setClipsStatus] = useState<"idle" | "generating" | "done" | "failed" | string>("idle");
-  const [topicMap, setTopicMap] = useState<Array<{ topic: string; summary: string; segments: Array<{ start: number; end: number; text: string }> }> | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
@@ -239,7 +238,7 @@ export function ProjectDetailContent({ id }: { id: string }) {
     const d = await r.json();
     const status = d.clips_status ?? "idle";
     setClipsStatus(status);
-    if (d.topic_map) setTopicMap(d.topic_map);
+
     if (d.clips && d.clips.length > 0) {
       const sorted = [...d.clips].sort((a: Clip, b: Clip) => b.score - a.score);
       setClips(sorted);
@@ -295,7 +294,6 @@ export function ProjectDetailContent({ id }: { id: string }) {
       if (clipTargetDuration && Number(clipTargetDuration) > 0) body.targetDuration = Number(clipTargetDuration);
       // Reset clips so we show loading state while Inngest job runs
       setClips(null);
-      setTopicMap(null);
       setSelectedTopic(null);
       const res = await fetch(`/api/projects/${id}/clips`, {
         method: "POST",
@@ -739,37 +737,43 @@ export function ProjectDetailContent({ id }: { id: string }) {
                       </div>
                     )}
 
-                    {/* Topic filter chips */}
-                    {topicMap && topicMap.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedTopic(null)}
-                          className={`text-xs px-3 py-1.5 rounded-full border transition-colors min-h-[32px] ${
-                            selectedTopic === null
-                              ? "bg-violet-600 border-violet-600 text-white"
-                              : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
-                          }`}
-                        >
-                          All
-                        </button>
-                        {topicMap.map(t => (
+                    {/* Topic filter chips — derived directly from clips */}
+                    {(() => {
+                      const topics = [...new Set((clips ?? []).map(c => c.topic).filter(Boolean) as string[])];
+                      if (topics.length < 2) return null;
+                      return (
+                        <div className="flex flex-wrap gap-1.5">
                           <button
-                            key={t.topic}
                             type="button"
-                            onClick={() => setSelectedTopic(selectedTopic === t.topic ? null : t.topic)}
-                            title={t.summary}
+                            onClick={() => setSelectedTopic(null)}
                             className={`text-xs px-3 py-1.5 rounded-full border transition-colors min-h-[32px] ${
-                              selectedTopic === t.topic
+                              selectedTopic === null
                                 ? "bg-violet-600 border-violet-600 text-white"
                                 : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
                             }`}
                           >
-                            {t.topic}
+                            All ({clips?.length})
                           </button>
-                        ))}
-                      </div>
-                    )}
+                          {topics.map(t => {
+                            const count = clips?.filter(c => c.topic === t).length ?? 0;
+                            return (
+                              <button
+                                key={t}
+                                type="button"
+                                onClick={() => setSelectedTopic(selectedTopic === t ? null : t)}
+                                className={`text-xs px-3 py-1.5 rounded-full border transition-colors min-h-[32px] ${
+                                  selectedTopic === t
+                                    ? "bg-violet-600 border-violet-600 text-white"
+                                    : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
+                                }`}
+                              >
+                                {t} ({count})
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
 
                     {/* Clips list */}
                     {clipsStatus !== "generating" && sortedClips && sortedClips.length > 0 && (

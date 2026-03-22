@@ -5,7 +5,7 @@
  */
 import { inngest } from "@/lib/inngest";
 import { supabaseAdmin } from "@/lib/supabase";
-import { generateHighlights, formatSegmentsForHighlights, buildTopicMap } from "@/lib/highlights";
+import { generateHighlights, formatSegmentsForHighlights } from "@/lib/highlights";
 
 export interface GenerateClipsEventData {
   projectId: string;
@@ -53,18 +53,7 @@ export const generateClips = inngest.createFunction(
       return generateHighlights(formatted, transcript, opts);
     });
 
-    // Build full topic map for the filter UI (auto mode only)
-    let topicMap = null;
-    if (isAuto) {
-      topicMap = await step.run("build-topic-map", async () => {
-        try {
-          return await buildTopicMap(formatted, transcript);
-        } catch (err) {
-          console.warn("Topic map failed, skipping:", err);
-          return null;
-        }
-      });
-    }
+    // Topic map is now derived from clip.topic fields — no separate step needed
 
     // Save clips to DB
     await step.run("save-clips", async () => {
@@ -96,13 +85,13 @@ export const generateClips = inngest.createFunction(
 
       await supabaseAdmin.from("clips").insert(insertPayload);
 
-      // Store topic map on the project for the filter UI
       await supabaseAdmin
         .from("projects")
-        .update({ clips_status: "done", topic_map: topicMap })
+        .update({ clips_status: "done" })
         .eq("id", projectId);
     });
 
-    return { projectId, clipCount: highlights.length, topicCount: topicMap?.length ?? 0 };
+    const topics = [...new Set(highlights.map(h => h.topic).filter(Boolean))];
+    return { projectId, clipCount: highlights.length, topicCount: topics.length };
   }
 );
