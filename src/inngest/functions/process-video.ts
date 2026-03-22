@@ -60,7 +60,6 @@ async function downloadYouTubeVideo(url: string, outputPath: string): Promise<vo
     "--merge-output-format", "mp4",
     "--output", outputPath,
     "--no-playlist",
-    "--cookies-from-browser", "chrome",
     "--extractor-args", "youtube:player_client=web,android",
     "--socket-timeout", "30",
     url,
