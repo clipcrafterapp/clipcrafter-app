@@ -95,7 +95,7 @@ export async function GET(
       .order("score", { ascending: false }),
     supabaseAdmin
       .from("projects")
-      .select("clips_status, topic_map")
+      .select("clips_status, topic_map, video_graph")
       .eq("id", id)
       .single(),
   ]);
@@ -104,5 +104,6 @@ export async function GET(
     clips: clipsRes.data ?? [],
     clips_status: projectRes.data?.clips_status ?? "idle",
     topic_map: projectRes.data?.topic_map ?? null,
+    video_graph: projectRes.data?.video_graph ?? null,
   }, { status: 200 });
 }

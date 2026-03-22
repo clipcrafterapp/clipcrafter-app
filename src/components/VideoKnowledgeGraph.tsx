@@ -1,0 +1,309 @@
+"use client";
+
+import { useCallback, useMemo } from "react";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  useNodesState,
+  useEdgesState,
+  BackgroundVariant,
+  type Node,
+  type Edge,
+  type NodeProps,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import type { VideoGraph, GraphSegment, GraphNode } from "@/lib/video-graph";
+
+interface Props {
+  graph: VideoGraph;
+  onSegmentClick: (segment: GraphSegment) => void;
+  selectedSegmentIds: Set<string>;
+  onSegmentSelect: (id: string, selected: boolean) => void;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function speakerColor(speakerId: string | null): { border: string; bg: string; badge: string } {
+  if (speakerId === "Speaker 0" || speakerId === "0") return { border: "#7c3aed", bg: "#2e1065", badge: "bg-violet-700" };
+  if (speakerId === "Speaker 1" || speakerId === "1") return { border: "#2563eb", bg: "#172554", badge: "bg-blue-700" };
+  if (speakerId === "Speaker 2" || speakerId === "2") return { border: "#16a34a", bg: "#052e16", badge: "bg-green-700" };
+  return { border: "#4b5563", bg: "#111827", badge: "bg-gray-700" };
+}
+
+function edgeColor(type: string): string {
+  switch (type) {
+    case "logical-flow": return "#6b7280";
+    case "setup-payoff": return "#7c3aed";
+    case "claim-proof": return "#2563eb";
+    case "contrast": return "#ea580c";
+    case "problem-solution": return "#16a34a";
+    default: return "#6b7280";
+  }
+}
+
+function formatRelType(type: string): string {
+  return type.replace(/-/g, " → ").replace("→ ", "→ ");
+}
+
+// ─── Custom node types ────────────────────────────────────────────────────────
+
+interface TopicNodeData extends Record<string, unknown> {
+  node: GraphNode;
+}
+
+function TopicNode({ data }: NodeProps<Node<TopicNodeData>>) {
+  const { node } = data;
+  const colors = speakerColor(node.speakerId);
+  const size = node.importance >= 80 ? "text-sm" : node.importance >= 50 ? "text-xs" : "text-xs";
+
+  return (
+    <div
+      className="rounded-xl px-3 py-2.5 flex flex-col gap-1"
+      style={{
+        width: 220,
+        background: colors.bg,
+        border: `2px solid ${colors.border}`,
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className={`shrink-0 text-xs font-bold px-1.5 py-0.5 rounded-full text-white ${colors.badge}`}
+        >
+          {node.importance}
+        </span>
+        <p className={`font-bold text-white leading-tight ${size} flex-1 min-w-0`}>
+          {node.label}
+        </p>
+      </div>
+      <p className="text-gray-400 text-xs leading-snug line-clamp-2">{node.summary}</p>
+    </div>
+  );
+}
+
+interface SegmentNodeData extends Record<string, unknown> {
+  segment: GraphSegment;
+  selected: boolean;
+  onSegmentClick: (segment: GraphSegment) => void;
+  onSegmentSelect: (id: string, selected: boolean) => void;
+}
+
+function SegmentNode({ data }: NodeProps<Node<SegmentNodeData>>) {
+  const { segment, selected, onSegmentClick, onSegmentSelect } = data;
+
+  return (
+    <div
+      className="rounded-lg px-3 py-2 flex flex-col gap-1.5 cursor-pointer transition-all"
+      style={{
+        width: 200,
+        background: "#111827",
+        border: selected ? "2px solid #7c3aed" : "1px solid #374151",
+        boxShadow: selected ? "0 0 0 2px #7c3aed44" : undefined,
+      }}
+      onClick={() => onSegmentClick(segment)}
+    >
+      <div className="flex items-center gap-2">
+        <div
+          className="shrink-0"
+          onClick={e => {
+            e.stopPropagation();
+            onSegmentSelect(segment.id, !selected);
+          }}
+        >
+          <input
+            type="checkbox"
+            readOnly
+            checked={selected}
+            className="w-3.5 h-3.5 accent-violet-500 cursor-pointer"
+          />
+        </div>
+        <p className="text-gray-200 text-xs leading-snug line-clamp-2 flex-1">
+          {segment.hookSentence}
+        </p>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-gray-500 font-mono">
+        <span>{formatTime(segment.start)} → {formatTime(segment.end)}</span>
+        <span
+          className="ml-auto shrink-0 text-xs font-bold px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-300"
+        >
+          {segment.intensityScore}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+const nodeTypes = {
+  topic: TopicNode,
+  segment: SegmentNode,
+};
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export default function VideoKnowledgeGraph({
+  graph,
+  onSegmentClick,
+  selectedSegmentIds,
+  onSegmentSelect,
+}: Props) {
+  // Build nodes: topics in a grid, segments below their parent topic
+  const initialNodes = useMemo<Node[]>(() => {
+    const TOPIC_COLS = Math.ceil(Math.sqrt(graph.nodes.length));
+    const topicPositions: Record<string, { x: number; y: number }> = {};
+
+    const topicNodes: Node[] = graph.nodes.map((node, i) => {
+      const col = i % TOPIC_COLS;
+      const row = Math.floor(i / TOPIC_COLS);
+      const x = col * 300;
+      const y = row * 200;
+      topicPositions[node.id] = { x, y };
+      return {
+        id: node.id,
+        type: "topic",
+        position: { x, y },
+        data: { node } as TopicNodeData,
+      };
+    });
+
+    // Group segments by topicId
+    const segsByTopic: Record<string, GraphSegment[]> = {};
+    for (const seg of graph.segments) {
+      if (!segsByTopic[seg.topicId]) segsByTopic[seg.topicId] = [];
+      segsByTopic[seg.topicId].push(seg);
+    }
+
+    const segmentNodes: Node[] = graph.segments.map(segment => {
+      const parentPos = topicPositions[segment.topicId] ?? { x: 0, y: 0 };
+      const siblings = segsByTopic[segment.topicId] ?? [];
+      const idx = siblings.indexOf(segment);
+      return {
+        id: segment.id,
+        type: "segment",
+        position: {
+          x: parentPos.x + idx * 220,
+          y: parentPos.y + 140,
+        },
+        data: {
+          segment,
+          selected: selectedSegmentIds.has(segment.id),
+          onSegmentClick,
+          onSegmentSelect,
+        } as SegmentNodeData,
+      };
+    });
+
+    return [...topicNodes, ...segmentNodes];
+  }, [graph, selectedSegmentIds, onSegmentClick, onSegmentSelect]);
+
+  const initialEdges = useMemo<Edge[]>(() => {
+    // Topic → segment edges (structural)
+    const structuralEdges: Edge[] = graph.segments.map(seg => ({
+      id: `topic-${seg.topicId}-${seg.id}`,
+      source: seg.topicId,
+      target: seg.id,
+      style: { stroke: "#374151", strokeWidth: 1 },
+      animated: false,
+    }));
+
+    // Semantic edges between segments
+    const semanticEdges: Edge[] = graph.edges.map((edge, i) => {
+      const color = edgeColor(edge.relationshipType);
+      return {
+        id: `edge-${i}-${edge.source}-${edge.target}`,
+        source: edge.source,
+        target: edge.target,
+        animated: true,
+        label: formatRelType(edge.relationshipType),
+        labelStyle: { fill: color, fontSize: 10 },
+        style: { stroke: color, strokeWidth: 1.5 },
+      };
+    });
+
+    return [...structuralEdges, ...semanticEdges];
+  }, [graph]);
+
+  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
+
+  // Keep segment selected state in sync when selectedSegmentIds changes
+  const nodesWithSelection = useMemo(() => {
+    return nodes.map(node => {
+      if (node.type !== "segment") return node;
+      const seg = (node.data as SegmentNodeData).segment;
+      const selected = selectedSegmentIds.has(seg.id);
+      if ((node.data as SegmentNodeData).selected === selected) return node;
+      return {
+        ...node,
+        data: {
+          ...(node.data as SegmentNodeData),
+          selected,
+          onSegmentClick,
+          onSegmentSelect,
+        },
+      };
+    });
+  }, [nodes, selectedSegmentIds, onSegmentClick, onSegmentSelect]);
+
+  const handleAddToReel = useCallback(async () => {
+    const segments = graph.segments.filter(s => selectedSegmentIds.has(s.id));
+    const projectId = window.location.pathname.split("/").at(-1);
+    await fetch(`/api/projects/${projectId}/clips/from-segments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        segments: segments.map(s => ({
+          start: s.start,
+          end: s.end,
+          text: s.hookSentence,
+          topic: graph.nodes.find(n => n.id === s.topicId)?.label ?? "",
+        })),
+      }),
+    });
+  }, [graph, selectedSegmentIds]);
+
+  return (
+    <div className="relative w-full h-full bg-gray-950">
+      <ReactFlow
+        nodes={nodesWithSelection}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.2 }}
+        minZoom={0.2}
+        maxZoom={2}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background
+          variant={BackgroundVariant.Dots}
+          color="#374151"
+          gap={20}
+          size={1}
+        />
+        <Controls
+          className="!bg-gray-900 !border-gray-700 !text-gray-300"
+        />
+      </ReactFlow>
+
+      {/* Floating "Add to Reel" button */}
+      {selectedSegmentIds.size > 0 && (
+        <div className="absolute bottom-6 right-6 z-10">
+          <button
+            type="button"
+            onClick={handleAddToReel}
+            className="px-5 py-3 bg-violet-600 hover:bg-violet-500 rounded-xl text-sm font-semibold text-white shadow-lg transition-colors"
+          >
+            + Add {selectedSegmentIds.size} segment{selectedSegmentIds.size !== 1 ? "s" : ""} to Reel
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,7 +1,10 @@
 "use client";
 
 import { use, useEffect, useRef, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
+
+const VideoKnowledgeGraph = dynamic(() => import("@/components/VideoKnowledgeGraph"), { ssr: false });
 
 interface Artifact {
   url: string;
@@ -157,6 +160,11 @@ export function ProjectDetailContent({ id }: { id: string }) {
   const [clipsStatus, setClipsStatus] = useState<"idle" | "generating" | "done" | "failed" | string>("idle");
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  const [videoGraph, setVideoGraph] = useState<import("@/lib/video-graph").VideoGraph | null>(null);
+
+  // Graph view state
+  const [viewMode, setViewMode] = useState<"list" | "graph">("list");
+  const [graphSelectedIds, setGraphSelectedIds] = useState<Set<string>>(new Set());
 
   // Highlight generation options
   const [clipCount, setClipCount] = useState<number | "auto">("auto");
@@ -235,13 +243,14 @@ export function ProjectDetailContent({ id }: { id: string }) {
     return () => clearInterval(interval);
   }, [data, fetchStatus]);
 
-  // Fetch clips helper — reads status + topic_map too
+  // Fetch clips helper — reads status + topic_map + video_graph too
   const fetchClips = useCallback(async () => {
     const r = await fetch(`/api/projects/${id}/clips`);
     if (!r.ok) return;
     const d = await r.json();
     const status = d.clips_status ?? "idle";
     setClipsStatus(status);
+    if (d.video_graph) setVideoGraph(d.video_graph);
 
     if (d.clips && d.clips.length > 0) {
       const sorted = [...d.clips].sort((a: Clip, b: Clip) => b.score - a.score);
@@ -673,6 +682,34 @@ export function ProjectDetailContent({ id }: { id: string }) {
                 {/* Completed section */}
                 {isCompleted && (
                   <>
+                    {/* View toggle — only shown when video_graph exists */}
+                    {videoGraph && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setViewMode("list")}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors min-h-[32px] ${
+                            viewMode === "list"
+                              ? "bg-violet-600 text-white"
+                              : "bg-gray-800 text-gray-400 hover:text-white"
+                          }`}
+                        >
+                          ≡ List
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setViewMode("graph")}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors min-h-[32px] ${
+                            viewMode === "graph"
+                              ? "bg-violet-600 text-white"
+                              : "bg-gray-800 text-gray-400 hover:text-white"
+                          }`}
+                        >
+                          ⬡ Graph
+                        </button>
+                      </div>
+                    )}
+
                     {/* Clips header */}
                     <div className="flex items-center gap-3">
                       <h2 className="text-lg font-bold text-white flex-1">✨ AI Clips</h2>
@@ -760,8 +797,58 @@ export function ProjectDetailContent({ id }: { id: string }) {
                       </div>
                     )}
 
+                    {/* Graph view */}
+                    {viewMode === "graph" && videoGraph && (
+                      <div className="rounded-xl overflow-hidden border border-gray-800" style={{ height: 480 }}>
+                        <VideoKnowledgeGraph
+                          graph={videoGraph}
+                          onSegmentClick={segment => {
+                            if (videoRef.current) {
+                              videoRef.current.currentTime = segment.start;
+                              videoRef.current.play();
+                            }
+                          }}
+                          selectedSegmentIds={graphSelectedIds}
+                          onSegmentSelect={(segId, selected) => {
+                            setGraphSelectedIds(prev => {
+                              const next = new Set(prev);
+                              if (selected) next.add(segId);
+                              else next.delete(segId);
+                              return next;
+                            });
+                          }}
+                        />
+                      </div>
+                    )}
+                    {viewMode === "graph" && graphSelectedIds.size > 0 && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!videoGraph) return;
+                          const segments = videoGraph.segments.filter(s => graphSelectedIds.has(s.id));
+                          await fetch(`/api/projects/${id}/clips/from-segments`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              segments: segments.map(s => ({
+                                start: s.start,
+                                end: s.end,
+                                text: s.hookSentence,
+                                topic: videoGraph.nodes.find(n => n.id === s.topicId)?.label ?? "",
+                              })),
+                            }),
+                          });
+                          setGraphSelectedIds(new Set());
+                          await fetchClips();
+                        }}
+                        className="w-full px-4 py-3 bg-violet-600 hover:bg-violet-500 rounded-xl text-sm font-semibold text-white transition-colors min-h-[44px]"
+                      >
+                        + Add {graphSelectedIds.size} segment{graphSelectedIds.size !== 1 ? "s" : ""} to clips
+                      </button>
+                    )}
+
                     {/* Topic filter chips — derived directly from clips */}
-                    {(() => {
+                    {viewMode === "list" && (() => {
                       const topics = [...new Set((clips ?? []).map(c => c.topic).filter(Boolean) as string[])];
                       if (topics.length < 2) return null;
                       return (
@@ -799,7 +886,7 @@ export function ProjectDetailContent({ id }: { id: string }) {
                     })()}
 
                     {/* Export bar */}
-                    {clipsStatus !== "generating" && sortedClips && sortedClips.length > 0 && (
+                    {viewMode === "list" && clipsStatus !== "generating" && sortedClips && sortedClips.length > 0 && (
                       <div className="sticky top-0 z-10 bg-gray-950 py-2 flex items-center gap-3 border-b border-gray-800 -mx-4 px-4">
                         <label className="flex items-center gap-1.5 cursor-pointer select-none min-h-[36px]">
                           <input
@@ -843,7 +930,7 @@ export function ProjectDetailContent({ id }: { id: string }) {
                     )}
 
                     {/* Clips list */}
-                    {clipsStatus !== "generating" && sortedClips && sortedClips.length > 0 && (
+                    {viewMode === "list" && clipsStatus !== "generating" && sortedClips && sortedClips.length > 0 && (
                       <div className="flex flex-col gap-3">
                         {sortedClips
                           .filter(clip => !selectedTopic || clip.topic === selectedTopic)

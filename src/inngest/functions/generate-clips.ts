@@ -91,6 +91,25 @@ export const generateClips = inngest.createFunction(
         .eq("id", projectId);
     });
 
+    // Build semantic video graph (non-fatal — clips already saved)
+    await step.run("build-video-graph", async () => {
+      try {
+        const { buildVideoGraph } = await import("@/lib/video-graph");
+        const { formatSegmentsForHighlights } = await import("@/lib/highlights");
+        const graph = await buildVideoGraph(
+          formatSegmentsForHighlights(transcript),
+          transcript
+        );
+        await supabaseAdmin
+          .from("projects")
+          .update({ video_graph: graph })
+          .eq("id", projectId);
+      } catch (err) {
+        // Non-fatal — clips are already saved, graph is bonus
+        console.warn("video graph build failed:", err);
+      }
+    });
+
     const topics = [...new Set(highlights.map(h => h.topic).filter(Boolean))];
     return { projectId, clipCount: highlights.length, topicCount: topics.length };
   }
