@@ -60,6 +60,8 @@ async function downloadYouTubeVideo(url: string, outputPath: string): Promise<vo
     "--merge-output-format", "mp4",
     "--output", outputPath,
     "--no-playlist",
+    // Normalize timestamps so t=0 in transcript matches t=0 in the video file
+    "--postprocessor-args", "ffmpeg:-avoid_negative_ts make_zero",
     "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "--extractor-args", "youtube:player_client=android",
     url,
@@ -72,6 +74,9 @@ function extractAudioFromVideo(videoPath: string, audioPath: string): Promise<vo
       .output(audioPath)
       .audioCodec("libmp3lame")
       .noVideo()
+      // Force timestamps to start at 0 — yt-dlp downloads may have non-zero PTS
+      // which causes Sarvam transcript timestamps to be offset from the video player
+      .outputOptions(["-avoid_negative_ts", "make_zero", "-af", "asetpts=N/SR/TB"])
       .on("end", () => resolve())
       .on("error", (err: Error) => reject(err))
       .run();
