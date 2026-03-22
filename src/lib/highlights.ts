@@ -24,7 +24,12 @@ const PROVIDER = process.env.HIGHLIGHTS_PROVIDER ?? "gemini";
 const SARVAM_API_KEY = process.env.SARVAM_API_KEY ?? "";
 
 const HIGHLIGHTS_PROMPT = (transcript: string) => `
-You are a video content analyst. Given the following transcript, extract the top 5 most engaging and highlight-worthy moments.
+You are a video content analyst. Given the following timestamped transcript, extract the top 5 most engaging and highlight-worthy moments.
+
+The transcript format is:
+[SS.s] speaker text
+
+CRITICAL: Use the EXACT timestamp numbers from the transcript for "start" and "end". Do NOT invent or estimate timestamps. Each highlight must span one or more consecutive transcript lines — use the start time of the first line and the end time of the last line in the highlight.
 
 Score each highlight 0-100 using this rubric:
 - Hook strength (first 3 seconds of text): 30pts
@@ -35,19 +40,32 @@ Score each highlight 0-100 using this rubric:
 
 Return ONLY a valid JSON array with no markdown, no extra text. Format:
 [{
-  "start": <seconds>,
-  "end": <seconds>,
-  "text": "<quote>",
-  "reason": "<why it's engaging>",
+  "start": <exact seconds from transcript>,
+  "end": <exact seconds from transcript>,
+  "text": "<the actual transcript text for this segment>",
+  "reason": "<why it is engaging>",
   "score": <0-100 integer>,
   "score_reason": "<brief scoring justification>",
   "hashtags": ["<tag1>", "<tag2>", "<tag3>"],
   "clip_title": "<punchy 5-8 word title for this clip>"
 }]
 
-Transcript:
+Timestamped transcript:
 ${transcript}
 `.trim();
+
+export interface TranscriptSegmentInput {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/** Format segments into a timestamped string Gemini/Sarvam can reliably anchor on */
+export function formatSegmentsForHighlights(segments: TranscriptSegmentInput[]): string {
+  return segments
+    .map(s => `[${s.start.toFixed(1)}–${s.end.toFixed(1)}] ${s.text}`)
+    .join("\n");
+}
 
 export async function generateHighlights(transcript: string): Promise<Highlight[]> {
   if (!transcript) throw new Error("transcript is required");

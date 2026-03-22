@@ -9,7 +9,7 @@ import { inngest } from "@/lib/inngest";
 import { supabaseAdmin } from "@/lib/supabase";
 import { r2Client, R2_BUCKET } from "@/lib/r2";
 import { transcribeAudio } from "@/lib/transcribe";
-import { generateHighlights } from "@/lib/highlights";
+import { generateHighlights, formatSegmentsForHighlights } from "@/lib/highlights";
 
 const execFileAsync = promisify(execFile);
 
@@ -127,7 +127,7 @@ export async function processVideoHandler(
       await step.run("generate-highlights", async () => {
         await updateProjectStatus(projectId, { status: "generating_highlights" });
         const transcriptText = Array.isArray(existingTranscript?.segments)
-          ? (existingTranscript.segments as Array<{ text: string }>).map(s => s.text).join(" ")
+          ? formatSegmentsForHighlights(existingTranscript.segments as Array<{ start: number; end: number; text: string }>)
           : "";
         const highlights = await generateHighlights(transcriptText);
         const hlProvider = process.env.HIGHLIGHTS_PROVIDER ?? "gemini";
@@ -217,8 +217,9 @@ export async function processVideoHandler(
     // Step 4 — generate-highlights
     await step.run("generate-highlights", async () => {
       await updateProjectStatus(projectId, { status: "generating_highlights" });
+      const transcriptResult = transcript as { text: string; segments: Array<{ start: number; end: number; text: string }> };
       const highlights = await generateHighlights(
-        (transcript as { text: string }).text
+        formatSegmentsForHighlights(transcriptResult.segments ?? [])
       );
       const hlProvider = process.env.HIGHLIGHTS_PROVIDER ?? "gemini";
       logger.log({ step: "generate-highlights", provider: hlProvider, detail: `${highlights.length} highlights`, status: "ok" });
