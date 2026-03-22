@@ -64,33 +64,7 @@ function parseMMSS(str: string): number {
   return parseInt(parts[0]) * 60 + parseInt(parts[1]);
 }
 
-async function getGeminiModel(preferFast = true) {
-  const { GoogleGenerativeAI } = await import("@google/generative-ai");
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-  const models = preferFast
-    ? ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.0-flash-lite"]
-    : ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite"];
-  return { genAI, models: [...new Set([process.env.GEMINI_MODEL, ...models].filter(Boolean) as string[])] };
-}
-
-async function callGemini(prompt: string, preferFast = true): Promise<string> {
-  const { genAI, models } = await getGeminiModel(preferFast);
-  let lastErr: Error | null = null;
-  for (const modelName of models) {
-    try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(prompt);
-      return result.response.text() ?? "";
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const retryable = msg.includes("deprecated") || msg.includes("not found") || msg.includes("404") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("quota");
-      console.warn(`Gemini model "${modelName}" failed: ${msg}`);
-      lastErr = err instanceof Error ? err : new Error(msg);
-      if (!retryable) throw lastErr;
-    }
-  }
-  throw lastErr ?? new Error("All Gemini models failed");
-}
+import { callLLM, parseLLMJson } from "@/lib/llm";
 
 // ─── Auto mode: ONE-PASS topic map ───────────────────────────────────────────
 
@@ -129,8 +103,7 @@ export async function buildTopicMap(
   rawSegments: TranscriptSegmentInput[]
 ): Promise<TopicMap[]> {
   console.log("Building topic map (one-pass)...");
-  const raw = await callGemini(TOPIC_MAP_PROMPT(formattedTranscript));
-  const cleaned = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+  const raw = await callLLM(TOPIC_MAP_PROMPT(formattedTranscript));
 
   let parsed: Array<{
     topic: string;
@@ -141,10 +114,10 @@ export async function buildTopicMap(
   }>;
 
   try {
-    parsed = JSON.parse(cleaned);
+    parsed = parseLLMJson(raw);
   } catch {
-    console.error("Topic map JSON parse failed, raw:", cleaned.slice(0, 200));
-    throw new Error("Failed to parse topic map from Gemini");
+    console.error("Topic map JSON parse failed, raw:", raw.slice(0, 200));
+    throw new Error("Failed to parse topic map from LLM");
   }
 
   return parsed
@@ -185,9 +158,8 @@ ${clips.map((c, i) => `${i + 1}. [${Math.floor(c.start / 60).toString().padStart
 async function enrichClips(
   clips: Array<{ start: number; end: number; text: string; topic: string }>
 ): Promise<Array<{ score: number; score_reason: string; reason: string; hashtags: string[]; clip_title: string }>> {
-  const raw = await callGemini(ENRICH_PROMPT(clips), false);
-  const cleaned = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-  return JSON.parse(cleaned);
+  const raw = await callLLM(ENRICH_PROMPT(clips));
+  return parseLLMJson(raw);
 }
 
 // ─── Auto highlights from topic map ──────────────────────────────────────────
@@ -255,7 +227,7 @@ Rules: use only timestamps from the transcript. No explanation.`;
 };
 
 async function findTimeRanges(transcript: string, opts?: HighlightOptions): Promise<Array<{ start: number; end: number }>> {
-  const raw = await callGemini(FIND_SEGMENTS_PROMPT(transcript, opts));
+  const raw = await callLLM(FIND_SEGMENTS_PROMPT(transcript, opts));
   const results: Array<{ start: number; end: number }> = [];
   const linePattern = /(\d{1,2}:\d{2})\s*,\s*(\d{1,2}:\d{2})/g;
   let match;
