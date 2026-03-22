@@ -1,16 +1,23 @@
 /**
  * Inngest function: generate clips for a project
- * Triggered by: clips/generate event
- * Visible in Inngest dashboard, handles long Gemini calls without API timeout
+ *
+ * Pipeline (graph-first):
+ *   1. fetch-transcript
+ *   2. build-video-graph  ← Narrative Designer prompt, primary source of truth
+ *   3. save-clips         ← derived from graph segments (not a separate LLM call)
+ *
+ * Manual mode (count/prompt/targetDuration set):
+ *   Falls back to highlights.ts for targeted extraction, then derives graph from those clips.
  */
 import { inngest } from "@/lib/inngest";
 import { supabaseAdmin } from "@/lib/supabase";
-import { generateHighlights, formatSegmentsForHighlights } from "@/lib/highlights";
+import { formatSegmentsForHighlights } from "@/lib/highlights";
+import type { VideoGraph } from "@/lib/video-graph";
 
 export interface GenerateClipsEventData {
   projectId: string;
   userId: string;
-  count?: number;       // undefined = auto
+  count?: number;
   prompt?: string;
   targetDuration?: number;
 }
@@ -20,8 +27,8 @@ export const generateClips = inngest.createFunction(
   { event: "clips/generate" },
   async ({ event, step }) => {
     const { projectId, count, prompt, targetDuration } = event.data as GenerateClipsEventData;
+    const isManual = !!(count || prompt || targetDuration);
 
-    // Mark project clips as generating
     await step.run("mark-generating", async () => {
       await supabaseAdmin
         .from("projects")
@@ -29,7 +36,6 @@ export const generateClips = inngest.createFunction(
         .eq("id", projectId);
     });
 
-    // Fetch transcript
     const transcript = await step.run("fetch-transcript", async () => {
       const { data } = await supabaseAdmin
         .from("transcripts")
@@ -43,69 +49,75 @@ export const generateClips = inngest.createFunction(
     });
 
     const formatted = formatSegmentsForHighlights(transcript);
-    const isAuto = !count && !prompt;
 
-    // Build topic map (auto mode) or generate manual highlights
-    const highlights = await step.run("generate-highlights", async () => {
-      const opts = count || prompt || targetDuration
-        ? { count, prompt, targetDuration }
-        : undefined;
-      return generateHighlights(formatted, transcript, opts);
+    // ── Auto mode: graph is primary ───────────────────────────────────────────
+    // ── Manual mode: highlights first, graph derived from results ─────────────
+    const graph: VideoGraph = await step.run("build-video-graph", async () => {
+      if (isManual) {
+        // Manual: use highlights.ts for targeted extraction
+        const { generateHighlights, formatSegmentsForHighlights: fmt } = await import("@/lib/highlights");
+        const { buildGraphFromClips } = await import("@/lib/video-graph");
+        const highlights = await generateHighlights(formatted, transcript, { count, prompt, targetDuration });
+        return buildGraphFromClips(highlights);
+      } else {
+        // Auto: Narrative Designer builds the graph directly
+        const { buildVideoGraph } = await import("@/lib/video-graph");
+        return buildVideoGraph(formatted, transcript);
+      }
     });
 
-    // Topic map is now derived from clip.topic fields — no separate step needed
-
-    // Save clips to DB
     await step.run("save-clips", async () => {
-      // Clear existing clips
       await supabaseAdmin.from("clips").delete().eq("project_id", projectId);
 
-      if (highlights.length === 0) {
+      if (!graph.segments.length) {
         await supabaseAdmin
           .from("projects")
-          .update({ clips_status: "failed", topic_map: null })
+          .update({ clips_status: "failed", video_graph: null })
           .eq("id", projectId);
         return;
       }
 
-      const insertPayload = highlights.map(h => ({
-        project_id: projectId,
-        title: h.clip_title || h.text.slice(0, 60),
-        start_sec: h.start,
-        end_sec: h.end,
-        score: h.score ?? 50,
-        score_reason: h.score_reason ?? null,
-        hashtags: h.hashtags ?? [],
-        clip_title: h.clip_title || null,
-        topic: h.topic ?? null,
-        status: "pending",
-        caption_style: "hormozi",
-        aspect_ratio: "9:16",
-      }));
+      // Map graph segments → clips, enriching from parent node
+      const insertPayload = graph.segments.map(seg => {
+        const node = graph.nodes.find(n => n.id === seg.topicId);
+        return {
+          project_id: projectId,
+          title: seg.hookSentence?.slice(0, 60) || node?.label || "Untitled",
+          start_sec: seg.start,
+          end_sec: seg.end,
+          score: seg.intensityScore ?? 50,
+          score_reason: null as string | null,
+          hashtags: [] as string[],
+          clip_title: seg.hookSentence?.slice(0, 80) || null,
+          topic: node?.label ?? null,
+          status: "pending",
+          caption_style: "hormozi",
+          aspect_ratio: "9:16",
+        };
+      });
 
       await supabaseAdmin.from("clips").insert(insertPayload);
-
       await supabaseAdmin
         .from("projects")
-        .update({ clips_status: "done" })
+        .update({ clips_status: "done", video_graph: graph })
         .eq("id", projectId);
     });
 
-    // Build video graph FROM the clips — same source of truth, no extra Gemini call
-    await step.run("build-video-graph", async () => {
+    // Enrich clips with score_reason + hashtags in background (non-blocking, best-effort)
+    await step.run("enrich-clips", async () => {
       try {
-        const { buildGraphFromClips } = await import("@/lib/video-graph");
-        const graph = buildGraphFromClips(highlights);
-        await supabaseAdmin
-          .from("projects")
-          .update({ video_graph: graph })
-          .eq("id", projectId);
+        const { enrichClipsForProject } = await import("@/lib/highlights");
+        await enrichClipsForProject(projectId, graph.segments, transcript);
       } catch (err) {
-        console.warn("video graph build failed:", err);
+        console.warn("[generate-clips] enrich step failed (non-fatal):", err);
       }
     });
 
-    const topics = [...new Set(highlights.map(h => h.topic).filter(Boolean))];
-    return { projectId, clipCount: highlights.length, topicCount: topics.length };
+    return {
+      projectId,
+      clipCount: graph.segments.length,
+      topicCount: graph.nodes.length,
+      edgeCount: graph.edges.length,
+    };
   }
 );

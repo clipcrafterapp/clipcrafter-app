@@ -301,3 +301,53 @@ export async function generateHighlights(
     clip_title: enriched[i]?.clip_title ?? "",
   }));
 }
+
+// ─── Post-save enrichment ─────────────────────────────────────────────────────
+
+/**
+ * Enrich saved clips with score_reason + hashtags after they've been inserted.
+ * Called as a non-fatal background step in the Inngest pipeline.
+ */
+export async function enrichClipsForProject(
+  projectId: string,
+  segments: Array<{ id: string; start: number; end: number; topicId?: string }>,
+  rawSegments: TranscriptSegmentInput[]
+): Promise<void> {
+  const { supabaseAdmin } = await import("@/lib/supabase");
+
+  // Fetch saved clips to get their IDs and topics
+  const { data: clips } = await supabaseAdmin
+    .from("clips")
+    .select("id, start_sec, end_sec, topic, clip_title")
+    .eq("project_id", projectId);
+
+  if (!clips?.length) return;
+
+  const clipsForEnrich = clips.map(c => ({
+    start: c.start_sec,
+    end: c.end_sec,
+    text: rawSegments
+      .filter(s => s.end > c.start_sec && s.start < c.end_sec)
+      .map(s => s.text).join(" ").trim(),
+    topic: c.topic ?? "",
+  }));
+
+  const enriched = await enrichClips(clipsForEnrich);
+
+  // Update each clip with enrichment data
+  await Promise.all(
+    clips.map((clip, i) =>
+      supabaseAdmin
+        .from("clips")
+        .update({
+          score: enriched[i]?.score ?? 50,
+          score_reason: enriched[i]?.score_reason ?? null,
+          hashtags: enriched[i]?.hashtags ?? [],
+          clip_title: clip.clip_title || enriched[i]?.clip_title || null,
+        })
+        .eq("id", clip.id)
+    )
+  );
+
+  console.log(`[highlights] enriched ${clips.length} clips for project ${projectId}`);
+}
