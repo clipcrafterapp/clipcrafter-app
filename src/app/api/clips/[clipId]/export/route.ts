@@ -7,7 +7,7 @@ import { getSupabaseUserId } from "@/lib/user";
 import { inngest } from "@/lib/inngest";
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ clipId: string }> }
 ) {
   const { userId } = await auth();
@@ -17,6 +17,14 @@ export async function POST(
   if (!supabaseUserId) return Response.json({ error: "Failed to resolve user" }, { status: 500 });
 
   const { clipId } = await params;
+
+  let withCaptions = true;
+  try {
+    const body = await request.json() as { withCaptions?: unknown };
+    if (typeof body.withCaptions === "boolean") withCaptions = body.withCaptions;
+  } catch {
+    // no body or non-JSON — use default
+  }
 
   const { data: clip, error } = await supabaseAdmin
     .from("clips")
@@ -45,6 +53,7 @@ export async function POST(
       clipId,
       projectId: clip.project_id,
       userId: supabaseUserId,
+      withCaptions,
     },
   });
 

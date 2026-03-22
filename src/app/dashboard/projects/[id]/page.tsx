@@ -179,6 +179,10 @@ export function ProjectDetailContent({ id }: { id: string }) {
   const [isLooping, setIsLooping] = useState(false);
   const [showCaptions, setShowCaptions] = useState(true);
   const [isPreviewing, setIsPreviewing] = useState(false);
+
+  // Export selection state
+  const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
+  const [withCaptions, setWithCaptions] = useState(true);
   const previewClipIndexRef = useRef(0);
   const previewClipsRef = useRef<Clip[]>([]);
 
@@ -272,6 +276,13 @@ export function ProjectDetailContent({ id }: { id: string }) {
     return () => clearInterval(interval);
   }, [clipsStatus, fetchClips]);
 
+  // Auto-select all clips when clips array changes
+  useEffect(() => {
+    if (clips && clips.length > 0) {
+      setSelectedClipIds(new Set(clips.map(c => c.id)));
+    }
+  }, [clips?.length]);
+
   async function handleRetry() {
     await fetch(`/api/projects/${id}/process`, { method: "POST" });
     setLoading(true);
@@ -327,6 +338,18 @@ export function ProjectDetailContent({ id }: { id: string }) {
     const res = await fetch(`/api/clips/${clipId}/export`, { method: "POST" });
     if (res.ok) {
       setClips(prev => prev?.map(c => c.id === clipId ? { ...c, status: "exporting" } : c) ?? null);
+    }
+  }
+
+  async function handleExportBatch() {
+    const clipIds = [...selectedClipIds];
+    const res = await fetch(`/api/projects/${id}/clips/export-batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clipIds, withCaptions }),
+    });
+    if (res.ok) {
+      setClips(prev => prev?.map(c => selectedClipIds.has(c.id) ? { ...c, status: "exporting" } : c) ?? null);
     }
   }
 
@@ -775,6 +798,50 @@ export function ProjectDetailContent({ id }: { id: string }) {
                       );
                     })()}
 
+                    {/* Export bar */}
+                    {clipsStatus !== "generating" && sortedClips && sortedClips.length > 0 && (
+                      <div className="sticky top-0 z-10 bg-gray-950 py-2 flex items-center gap-3 border-b border-gray-800 -mx-4 px-4">
+                        <label className="flex items-center gap-1.5 cursor-pointer select-none min-h-[36px]">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 accent-violet-500"
+                            checked={selectedClipIds.size === sortedClips.length}
+                            ref={el => {
+                              if (el) el.indeterminate = selectedClipIds.size > 0 && selectedClipIds.size < sortedClips.length;
+                            }}
+                            onChange={e => {
+                              if (e.target.checked) {
+                                setSelectedClipIds(new Set(sortedClips.map(c => c.id)));
+                              } else {
+                                setSelectedClipIds(new Set());
+                              }
+                            }}
+                          />
+                          <span className="text-xs text-gray-400">Select All</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setWithCaptions(v => !v)}
+                          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors min-h-[30px] ${
+                            withCaptions ? "bg-green-700 text-green-100" : "bg-gray-700 text-gray-400"
+                          }`}
+                        >
+                          Caption: {withCaptions ? "ON" : "OFF"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleExportBatch}
+                          disabled={
+                            selectedClipIds.size === 0 ||
+                            (clips?.some(c => selectedClipIds.has(c.id) && c.status === "exporting") ?? false)
+                          }
+                          className="ml-auto px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-white transition-colors min-h-[36px]"
+                        >
+                          Export {selectedClipIds.size} clip{selectedClipIds.size !== 1 ? "s" : ""} ▶
+                        </button>
+                      </div>
+                    )}
+
                     {/* Clips list */}
                     {clipsStatus !== "generating" && sortedClips && sortedClips.length > 0 && (
                       <div className="flex flex-col gap-3">
@@ -791,7 +858,7 @@ export function ProjectDetailContent({ id }: { id: string }) {
                                 setSelectedClipId(clip.id);
                                 seekToClip(clip);
                               }}
-                              className={`bg-gray-900 border rounded-xl p-4 transition-all cursor-pointer ${
+                              className={`relative bg-gray-900 border rounded-xl p-4 transition-all cursor-pointer ${
                                 isSelected
                                   ? "border-l-4 border-l-violet-500 border-gray-700"
                                   : clip.status === "approved"
@@ -801,6 +868,26 @@ export function ProjectDetailContent({ id }: { id: string }) {
                                   : "border-gray-800 hover:border-gray-700"
                               }`}
                             >
+                              {/* Checkbox top-right */}
+                              <div
+                                className="absolute top-3 right-3"
+                                onClick={e => e.stopPropagation()}
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="w-4 h-4 accent-violet-500 cursor-pointer"
+                                  checked={selectedClipIds.has(clip.id)}
+                                  onChange={e => {
+                                    setSelectedClipIds(prev => {
+                                      const next = new Set(prev);
+                                      if (e.target.checked) next.add(clip.id);
+                                      else next.delete(clip.id);
+                                      return next;
+                                    });
+                                  }}
+                                />
+                              </div>
+
                               {/* Topic badge */}
                               {clip.topic && (
                                 <div className="mb-2">
@@ -895,14 +982,34 @@ export function ProjectDetailContent({ id }: { id: string }) {
                                   <option value="16:9">16:9</option>
                                 </select>
 
-                                <button
-                                  type="button"
-                                  onClick={() => handleExportClip(clip.id)}
-                                  disabled={clip.status === "exporting" || clip.status === "exported"}
-                                  className="ml-auto px-3 py-1.5 bg-violet-700 hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-white transition-colors min-h-[44px]"
-                                >
-                                  {clip.status === "exporting" ? "Exporting…" : clip.status === "exported" ? "Exported ✓" : "Export →"}
-                                </button>
+                                {clip.status === "exported" && clip.export_url ? (
+                                  <a
+                                    href={clip.export_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={e => e.stopPropagation()}
+                                    className="ml-auto px-3 py-1.5 bg-green-700 hover:bg-green-600 rounded-lg text-xs font-semibold text-white transition-colors min-h-[44px] flex items-center"
+                                  >
+                                    ↓ Download
+                                  </a>
+                                ) : clip.status === "exporting" ? (
+                                  <span className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 min-h-[44px]">
+                                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                      <circle cx="12" cy="12" r="10" strokeWidth="4" className="opacity-25" />
+                                      <path strokeLinecap="round" d="M4 12a8 8 0 018-8" strokeWidth="4" className="opacity-75" />
+                                    </svg>
+                                    Exporting…
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    aria-label="Export clip"
+                                    onClick={() => handleExportClip(clip.id)}
+                                    className="ml-auto px-3 py-1.5 bg-violet-700 hover:bg-violet-600 rounded-lg text-xs font-semibold text-white transition-colors min-h-[44px]"
+                                  >
+                                    Export →
+                                  </button>
+                                )}
                               </div>
                             </div>
                           );
