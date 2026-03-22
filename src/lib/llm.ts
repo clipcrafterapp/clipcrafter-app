@@ -94,7 +94,7 @@ async function callLLMWithModel(
     method: "POST",
     headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(300_000), // 5 min — long transcripts need time
   });
 
   if (!res.ok) {

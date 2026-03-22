@@ -58,6 +58,27 @@ export function formatSegmentsForHighlights(segments: TranscriptSegmentInput[]):
     .join("\n");
 }
 
+/**
+ * For very long transcripts (>15K chars), thin it to keep only every Nth segment
+ * so the prompt fits comfortably and Gemini doesn't time out.
+ * The timestamps are preserved so clip extraction is still accurate.
+ */
+export function thinTranscript(formatted: string, maxChars = 15_000): string {
+  if (formatted.length <= maxChars) return formatted;
+  const lines = formatted.split("\n").filter(Boolean);
+  // Progressively skip more lines until under limit
+  for (let step = 2; step <= 6; step++) {
+    const thinned = lines.filter((_, i) => i % step === 0).join("\n");
+    if (thinned.length <= maxChars) {
+      console.log(`[highlights] transcript thinned (1 of every ${step} segments, ${thinned.length} chars)`);
+      return thinned;
+    }
+  }
+  // Last resort: hard truncate at char limit with a note
+  console.warn(`[highlights] transcript hard-truncated to ${maxChars} chars`);
+  return formatted.slice(0, maxChars);
+}
+
 /** Parse "MM:SS" → seconds */
 function parseMMSS(str: string): number {
   const parts = str.trim().split(":");
@@ -103,7 +124,7 @@ export async function buildTopicMap(
   rawSegments: TranscriptSegmentInput[]
 ): Promise<TopicMap[]> {
   console.log("Building topic map (one-pass)...");
-  const raw = await callLLM(TOPIC_MAP_PROMPT(formattedTranscript));
+  const raw = await callLLM(TOPIC_MAP_PROMPT(thinTranscript(formattedTranscript)));
 
   let parsed: Array<{
     topic: string;
@@ -227,7 +248,7 @@ Rules: use only timestamps from the transcript. No explanation.`;
 };
 
 async function findTimeRanges(transcript: string, opts?: HighlightOptions): Promise<Array<{ start: number; end: number }>> {
-  const raw = await callLLM(FIND_SEGMENTS_PROMPT(transcript, opts));
+  const raw = await callLLM(FIND_SEGMENTS_PROMPT(thinTranscript(transcript), opts));
   const results: Array<{ start: number; end: number }> = [];
   const linePattern = /(\d{1,2}:\d{2})\s*,\s*(\d{1,2}:\d{2})/g;
   let match;

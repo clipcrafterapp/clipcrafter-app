@@ -11,7 +11,7 @@
  */
 
 import { callLLM, parseLLMJson } from "@/lib/llm";
-import { TranscriptSegmentInput } from "@/lib/highlights";
+import { TranscriptSegmentInput, thinTranscript } from "@/lib/highlights";
 
 export interface GraphNode {
   id: string;
@@ -113,7 +113,7 @@ export async function buildVideoGraph(
   _rawSegments?: TranscriptSegmentInput[]
 ): Promise<VideoGraph> {
   console.log("[video-graph] Building semantic graph...");
-  const raw = await callLLM(VIDEO_GRAPH_PROMPT(formattedTranscript), {
+  const raw = await callLLM(VIDEO_GRAPH_PROMPT(thinTranscript(formattedTranscript)), {
     temperature: 0.2,
     systemPrompt: "You are a Narrative Designer. Output only valid JSON.",
   });
