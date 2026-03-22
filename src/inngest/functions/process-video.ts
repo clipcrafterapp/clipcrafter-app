@@ -62,8 +62,10 @@ async function downloadYouTubeVideo(url: string, outputPath: string): Promise<vo
     "--no-playlist",
     // Use Chrome cookies to bypass YouTube bot-detection on server/Inngest
     "--cookies-from-browser", "chrome",
+    // Hard timeout — never hang forever
+    "--socket-timeout", "30",
     url,
-  ]);
+  ], { timeout: 5 * 60 * 1000 }); // 5 min max, throws if exceeded
 }
 
 function extractAudioFromVideo(videoPath: string, audioPath: string): Promise<void> {

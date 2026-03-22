@@ -115,6 +115,20 @@ Every page must be mobile responsive. Test on mobile before marking any phase co
 - Text readable without zooming (min 16px base)
 - Test at 390px width (iPhone) and 414px (Android) as baseline
 
+## 11. Keep TODO.md Updated
+
+`TODO.md` in the repo root is the single source of truth for what needs doing.
+
+- **When you start a task** → move it to 🚧 In Progress
+- **When you finish a task** → move it to ✅ Done
+- **When you discover a new issue or production concern** → add it to 📋 Backlog with correct priority
+- **After every phase or significant change** → review and update TODO.md
+- Update the `*Last updated:` date at the bottom whenever you edit it
+
+Do not let TODO.md go stale. It should always reflect the current state of the project.
+
+---
+
 ## 10. Bug Log
 
 Every non-trivial bug found during development must be logged in `docs/bug-log.md`.
