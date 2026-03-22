@@ -35,6 +35,10 @@ Modules that could be extracted and open sourced independently.
 - When a module is ready, extract to `packages/<name>` with its own `package.json`
 - Publish to npm under `@toolnexus/<name>` or as standalone
 
+## Updated 2026-03-22
+
+Today's commits (auto-clip mode, topic discovery, yt-dlp fixes, Inngest payload fix) are product-specific. No new open-source candidates surfaced. The Inngest "read fresh from DB, not event payload" pattern was the notable general lesson — documented in today's dev.to post rather than as extractable code.
+
 ## Updated 2026-03-21
 
 | Module | Location | Description | Blocker |
