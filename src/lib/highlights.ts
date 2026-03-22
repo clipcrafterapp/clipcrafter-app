@@ -51,14 +51,29 @@ function parseMMSS(str: string): number {
 
 // ─── Pass 1: find time ranges ─────────────────────────────────────────────────
 
-const FIND_SEGMENTS_PROMPT = (transcript: string) => `You are an expert video editor and storyteller.
+export interface HighlightOptions {
+  count?: number;          // number of highlights to extract (default 5)
+  prompt?: string;         // custom search query, e.g. "moments about AI"
+  targetDuration?: number; // total combined duration in seconds, e.g. 60
+}
+
+const FIND_SEGMENTS_PROMPT = (transcript: string, opts: HighlightOptions = {}) => {
+  const count = opts.count ?? 5;
+  const instruction = opts.prompt
+    ? `Instruction: Identify ${count} segments that directly answer, discuss, or relate to this topic: "${opts.prompt}".`
+    : `Instruction: Identify the ${count} most impactful, emotionally resonant, and engaging highlight moments.`;
+  const constraint = opts.targetDuration
+    ? `\nConstraint: Select segments whose combined total duration is approximately ${opts.targetDuration} seconds.`
+    : "";
+
+  return `You are an expert video editor and storyteller.
 
 You are given a timestamped transcript. Each line is formatted as [MM:SS] text.
 
 Transcript:
 ${transcript}
 
-Instruction: Identify the 5 most impactful, emotionally resonant, and engaging highlight moments.
+${instruction}${constraint}
 
 Output Format: Return ONLY a list of time segments in 'MM:SS, MM:SS' format (start, end per line).
 Example:
@@ -69,6 +84,7 @@ Rules:
 - Use timestamps that appear in the transcript directly — do not invent timestamps.
 - Each segment should be a coherent, self-contained moment (minimum 5 seconds).
 - Do not include any explanation, just the list of time pairs.`;
+};
 
 // ─── Pass 2: enrich each segment ─────────────────────────────────────────────
 
@@ -99,12 +115,13 @@ ${segments.map((s, i) => `${i + 1}. [${Math.floor(s.start / 60).toString().padSt
 
 export async function generateHighlights(
   formattedTranscript: string,
-  rawSegments?: TranscriptSegmentInput[]
+  rawSegments?: TranscriptSegmentInput[],
+  opts?: HighlightOptions
 ): Promise<Highlight[]> {
   if (!formattedTranscript) throw new Error("transcript is required");
 
   // Pass 1: get accurate time ranges
-  const timeRanges = await findTimeRanges(formattedTranscript);
+  const timeRanges = await findTimeRanges(formattedTranscript, opts);
 
   if (timeRanges.length === 0) {
     console.warn("Highlights pass 1 returned no segments");
@@ -163,7 +180,7 @@ export async function generateHighlights(
 
 // ─── Pass 1 impl ─────────────────────────────────────────────────────────────
 
-async function findTimeRanges(transcript: string): Promise<Array<{ start: number; end: number }>> {
+async function findTimeRanges(transcript: string, opts?: HighlightOptions): Promise<Array<{ start: number; end: number }>> {
   const { GoogleGenerativeAI } = await import("@google/generative-ai");
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -178,7 +195,7 @@ async function findTimeRanges(transcript: string): Promise<Array<{ start: number
   for (const modelName of [...new Set(models)]) {
     try {
       const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(FIND_SEGMENTS_PROMPT(transcript));
+      const result = await model.generateContent(FIND_SEGMENTS_PROMPT(transcript, opts));
       raw = result.response.text() ?? "";
       console.log(`Highlights pass 1 done with model: ${modelName}`);
       break;

@@ -1,10 +1,12 @@
 /**
  * POST /api/projects/[id]/clips — generate clip rows from highlights
+ *   Body (optional): { count?: number, prompt?: string, targetDuration?: number }
  * GET  /api/projects/[id]/clips — list all clips for a project
  */
 import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getSupabaseUserId } from "@/lib/user";
+import { generateHighlights, formatSegmentsForHighlights } from "@/lib/highlights";
 
 async function resolveProjectOwnership(
   projectId: string,
@@ -42,39 +44,50 @@ export async function POST(
   const ownership = await resolveProjectOwnership(id, userId);
   if (ownership.error) return ownership.error;
 
-  // Fetch the latest highlights for this project
-  const { data: highlightRow, error: hlError } = await supabaseAdmin
-    .from("highlights")
-    .select("id, segments")
+  // Parse optional generation options from request body
+  let count: number | undefined;
+  let prompt: string | undefined;
+  let targetDuration: number | undefined;
+  try {
+    const body = await _request.json().catch(() => ({}));
+    count = body.count ? Number(body.count) : undefined;
+    prompt = body.prompt?.trim() || undefined;
+    targetDuration = body.targetDuration ? Number(body.targetDuration) : undefined;
+  } catch { /* no body is fine */ }
+
+  // Fetch transcript segments for this project
+  const { data: transcriptRow } = await supabaseAdmin
+    .from("transcripts")
+    .select("segments")
     .eq("project_id", id)
     .order("created_at", { ascending: false })
     .limit(1)
     .single();
 
-  if (hlError || !highlightRow) {
-    return Response.json({ error: "No highlights found — process the project first" }, { status: 422 });
+  if (!transcriptRow?.segments?.length) {
+    return Response.json({ error: "No transcript found — process the project first" }, { status: 422 });
   }
 
-  type HighlightSegment = {
-    start: number;
-    end: number;
-    text: string;
-    score?: number;
-    score_reason?: string;
-    hashtags?: string[];
-    clip_title?: string;
-  };
+  const rawSegs = transcriptRow.segments as Array<{ start: number; end: number; text: string }>;
 
-  const segments = (highlightRow.segments as HighlightSegment[]) ?? [];
+  // Re-run highlights with options (custom prompt / count / duration)
+  let segments;
+  try {
+    segments = await generateHighlights(
+      formatSegmentsForHighlights(rawSegs),
+      rawSegs,
+      { count, prompt, targetDuration }
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return Response.json({ error: `Highlights generation failed: ${msg}` }, { status: 500 });
+  }
 
   if (segments.length === 0) {
-    return Response.json(
-      { error: "Process this project first to generate highlights" },
-      { status: 422 }
-    );
+    return Response.json({ error: "No highlights could be generated" }, { status: 422 });
   }
 
-  // Deduplicate: remove any existing clips before re-inserting
+  // Deduplicate: remove existing clips before re-inserting
   await supabaseAdmin.from("clips").delete().eq("project_id", id);
 
   const insertPayload = segments.map((h) => ({

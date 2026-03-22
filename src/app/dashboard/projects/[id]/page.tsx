@@ -156,6 +156,11 @@ export function ProjectDetailContent({ id }: { id: string }) {
   const [clipsLoading, setClipsLoading] = useState(false);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 
+  // Highlight generation options
+  const [clipCount, setClipCount] = useState(5);
+  const [clipPrompt, setClipPrompt] = useState("");
+  const [clipTargetDuration, setClipTargetDuration] = useState("");
+
   // Sidebar open/close
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [downloadsOpen, setDownloadsOpen] = useState(false);
@@ -277,7 +282,14 @@ export function ProjectDetailContent({ id }: { id: string }) {
   async function handleGenerateClips() {
     setClipsLoading(true);
     try {
-      const res = await fetch(`/api/projects/${id}/clips`, { method: "POST" });
+      const body: Record<string, unknown> = { count: clipCount };
+      if (clipPrompt.trim()) body.prompt = clipPrompt.trim();
+      if (clipTargetDuration && Number(clipTargetDuration) > 0) body.targetDuration = Number(clipTargetDuration);
+      const res = await fetch(`/api/projects/${id}/clips`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
       if (res.ok) {
         const json = await res.json();
         const sorted = [...(json.clips ?? [])].sort((a: Clip, b: Clip) => b.score - a.score);
@@ -651,8 +663,42 @@ export function ProjectDetailContent({ id }: { id: string }) {
                         data-testid="generate-clips-btn"
                         className="px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-semibold text-white transition-colors min-h-[44px]"
                       >
-                        {clipsLoading ? "Generating…" : clips && clips.length > 0 ? "Regenerate Clips" : "Generate Clips"}
+                        {clipsLoading ? "Generating…" : clips && clips.length > 0 ? "Regenerate" : "Generate Clips"}
                       </button>
+                    </div>
+
+                    {/* Generation options */}
+                    <div className="flex flex-wrap items-center gap-2 py-1">
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-xs text-gray-500 shrink-0">Clips</label>
+                        <select
+                          value={clipCount}
+                          onChange={e => setClipCount(Number(e.target.value))}
+                          disabled={clipsLoading}
+                          className="bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-lg px-2 py-1.5 min-h-[36px]"
+                        >
+                          {[3,5,7,10].map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-xs text-gray-500 shrink-0">Duration (s)</label>
+                        <input
+                          type="number"
+                          placeholder="any"
+                          value={clipTargetDuration}
+                          onChange={e => setClipTargetDuration(e.target.value)}
+                          disabled={clipsLoading}
+                          className="w-16 bg-gray-800 border border-gray-700 text-gray-300 text-xs rounded-lg px-2 py-1.5 min-h-[36px]"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Search topic (optional)…"
+                        value={clipPrompt}
+                        onChange={e => setClipPrompt(e.target.value)}
+                        disabled={clipsLoading}
+                        className="flex-1 min-w-[140px] bg-gray-800 border border-gray-700 text-gray-300 placeholder-gray-600 text-xs rounded-lg px-3 py-1.5 min-h-[36px]"
+                      />
                     </div>
 
                     {/* Skeleton loading */}
