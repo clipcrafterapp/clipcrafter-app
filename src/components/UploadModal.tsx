@@ -31,6 +31,10 @@ function isYouTubeUrl(url: string): boolean {
   return /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/.+/.test(url.trim());
 }
 
+function isYouTubeLive(url: string): boolean {
+  return /youtube\.com\/live\//i.test(url);
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -115,6 +119,10 @@ export default function UploadModal({ open, onClose }: UploadModalProps) {
     setYoutubeError("");
     if (!isYouTubeUrl(youtubeUrl)) {
       setYoutubeError("Please enter a valid YouTube URL");
+      return;
+    }
+    if (isYouTubeLive(youtubeUrl)) {
+      setYoutubeError("Live streams aren't supported — please use a regular YouTube video URL (youtube.com/watch?v=...)");
       return;
     }
     setStep("creating");
