@@ -67,15 +67,25 @@ export async function POST(
 
   const segments = (highlightRow.segments as HighlightSegment[]) ?? [];
 
+  if (segments.length === 0) {
+    return Response.json(
+      { error: "Process this project first to generate highlights" },
+      { status: 422 }
+    );
+  }
+
+  // Deduplicate: remove any existing clips before re-inserting
+  await supabaseAdmin.from("clips").delete().eq("project_id", id);
+
   const insertPayload = segments.map((h) => ({
     project_id: id,
-    title: h.text,
+    title: h.clip_title ?? h.text.slice(0, 60),
     start_sec: h.start,
     end_sec: h.end,
-    score: h.score ?? 0,
+    score: h.score ?? 50,
     score_reason: h.score_reason ?? null,
     hashtags: h.hashtags ?? [],
-    clip_title: h.clip_title ?? null,
+    clip_title: h.clip_title ?? h.text.slice(0, 60),
     status: "pending",
     caption_style: "hormozi",
     aspect_ratio: "9:16",
