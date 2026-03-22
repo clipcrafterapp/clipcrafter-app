@@ -101,6 +101,72 @@ Rules:
 - Only create edges where there is a genuine semantic relationship
 - Aim for 3-8 topics, 1-3 segments per topic`;
 
+/**
+ * Build a VideoGraph directly from highlights/clips — no extra LLM call.
+ * This ensures list view and graph view show the SAME clips with the same timestamps.
+ * Edges are inferred by time order within each topic.
+ */
+export function buildGraphFromClips(clips: Array<{
+  start: number;
+  end: number;
+  text: string;
+  topic?: string;
+  clip_title?: string;
+  score?: number;
+  reason?: string;
+}>): VideoGraph {
+  // Group by topic
+  const topicGroups = new Map<string, typeof clips>();
+  for (const clip of clips) {
+    const t = clip.topic ?? "General";
+    if (!topicGroups.has(t)) topicGroups.set(t, []);
+    topicGroups.get(t)!.push(clip);
+  }
+
+  const nodes: GraphNode[] = [];
+  const segments: GraphSegment[] = [];
+  const edges: GraphEdge[] = [];
+
+  let nodeIdx = 0;
+  let segIdx = 0;
+
+  for (const [topic, topicClips] of topicGroups) {
+    const nodeId = `t${nodeIdx++}`;
+    nodes.push({
+      id: nodeId,
+      label: topic,
+      summary: topicClips[0]?.reason ?? topic,
+      importance: Math.round(topicClips.reduce((s, c) => s + (c.score ?? 50), 0) / topicClips.length),
+      speakerId: null,
+    });
+
+    const segIds: string[] = [];
+    for (const clip of topicClips.sort((a, b) => a.start - b.start)) {
+      const segId = `s${segIdx++}`;
+      segIds.push(segId);
+      segments.push({
+        id: segId,
+        topicId: nodeId,
+        start: clip.start,
+        end: clip.end,
+        hookSentence: clip.clip_title ?? clip.text?.slice(0, 100) ?? "",
+        intensityScore: clip.score ?? 50,
+      });
+    }
+
+    // Infer logical-flow edges between consecutive clips in same topic
+    for (let i = 0; i < segIds.length - 1; i++) {
+      edges.push({
+        source: segIds[i],
+        target: segIds[i + 1],
+        relationshipType: "logical-flow",
+      });
+    }
+  }
+
+  return { nodes, segments, edges };
+}
+
 /** Parse "MM:SS" → seconds */
 function parseMMSS(str: string): number {
   if (typeof str === "number") return str;

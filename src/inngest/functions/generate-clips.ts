@@ -91,21 +91,16 @@ export const generateClips = inngest.createFunction(
         .eq("id", projectId);
     });
 
-    // Build semantic video graph (non-fatal — clips already saved)
+    // Build video graph FROM the clips — same source of truth, no extra Gemini call
     await step.run("build-video-graph", async () => {
       try {
-        const { buildVideoGraph } = await import("@/lib/video-graph");
-        const { formatSegmentsForHighlights } = await import("@/lib/highlights");
-        const graph = await buildVideoGraph(
-          formatSegmentsForHighlights(transcript),
-          transcript
-        );
+        const { buildGraphFromClips } = await import("@/lib/video-graph");
+        const graph = buildGraphFromClips(highlights);
         await supabaseAdmin
           .from("projects")
           .update({ video_graph: graph })
           .eq("id", projectId);
       } catch (err) {
-        // Non-fatal — clips are already saved, graph is bonus
         console.warn("video graph build failed:", err);
       }
     });
