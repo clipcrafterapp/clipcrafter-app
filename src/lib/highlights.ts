@@ -124,7 +124,7 @@ export async function buildTopicMap(
   rawSegments: TranscriptSegmentInput[]
 ): Promise<TopicMap[]> {
   console.log("Building topic map (one-pass)...");
-  const raw = await callLLM(TOPIC_MAP_PROMPT(thinTranscript(formattedTranscript)));
+  const raw = await callLLM(TOPIC_MAP_PROMPT(formattedTranscript));
 
   let parsed: Array<{
     topic: string;
@@ -248,7 +248,7 @@ Rules: use only timestamps from the transcript. No explanation.`;
 };
 
 async function findTimeRanges(transcript: string, opts?: HighlightOptions): Promise<Array<{ start: number; end: number }>> {
-  const raw = await callLLM(FIND_SEGMENTS_PROMPT(thinTranscript(transcript), opts));
+  const raw = await callLLM(FIND_SEGMENTS_PROMPT(transcript, opts));
   const results: Array<{ start: number; end: number }> = [];
   const linePattern = /(\d{1,2}:\d{2})\s*,\s*(\d{1,2}:\d{2})/g;
   let match;
