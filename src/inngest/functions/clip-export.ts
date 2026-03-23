@@ -23,14 +23,13 @@ function isYouTubeUrl(str: string): boolean {
   return /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(str);
 }
 
-async function downloadR2Object(r2Key: string): Promise<Buffer> {
-  const command = new GetObjectCommand({ Bucket: R2_BUCKET, Key: r2Key });
-  const response = await r2Client.send(command);
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks);
+/** Get a short-lived presigned GET URL for any R2 key */
+async function getR2PresignedUrl(r2Key: string, expiresIn = 3600): Promise<string> {
+  return getSignedUrl(
+    r2Client,
+    new GetObjectCommand({ Bucket: R2_BUCKET, Key: r2Key }),
+    { expiresIn }
+  );
 }
 
 async function downloadYouTubeVideo(url: string, outputPath: string): Promise<void> {
@@ -101,36 +100,32 @@ async function renderWithRemotion(opts: {
 
 // ── main handler ──────────────────────────────────────────────────────────────
 
+type ClipRow = { id: string; start_sec: number; end_sec: number; caption_style: string; aspect_ratio: string; project_id: string };
+
 export async function clipExportHandler(
   event: { data: ClipExportEventData },
   step: { run: (id: string, fn: () => Promise<unknown>) => Promise<unknown> }
 ): Promise<Record<string, unknown>> {
   const { clipId, projectId, withCaptions = false } = event.data;
-
-  const sourcePath = path.join(os.tmpdir(), `clipcrafter-export-${clipId}-source.mp4`);
   const outputPath = path.join(os.tmpdir(), `clipcrafter-export-${clipId}.mp4`);
 
   try {
-    // Step 1 — fetch clip, project, and transcript segments
-    const { clip, segments, r2Key } = await step.run("fetch-clip-and-project", async () => {
+    // ── Step 1: fetch DB data, return everything needed for subsequent steps ──
+    const stepOneResult = await step.run("fetch-clip-and-project", async () => {
       const { data: clipData, error: clipError } = await supabaseAdmin
         .from("clips")
         .select("id, start_sec, end_sec, caption_style, aspect_ratio, project_id")
         .eq("id", clipId)
         .single();
-
       if (clipError || !clipData) throw new Error(`Clip ${clipId} not found`);
 
       const { data: projectData, error: projError } = await supabaseAdmin
         .from("projects")
-        .select("r2_key, audio_key")
+        .select("r2_key")
         .eq("id", projectId)
         .single();
+      if (projError || !projectData?.r2_key) throw new Error(`Project ${projectId} has no r2_key`);
 
-      if (projError || !projectData) throw new Error(`Project ${projectId} not found`);
-      if (!projectData.r2_key) throw new Error(`Project ${projectId} has no r2_key`);
-
-      // Fetch transcript segments in the clip range
       const { data: transcriptData } = await supabaseAdmin
         .from("transcripts")
         .select("segments")
@@ -140,95 +135,93 @@ export async function clipExportHandler(
         .single();
 
       const allSegments: Segment[] = Array.isArray(transcriptData?.segments)
-        ? transcriptData.segments as Segment[]
-        : [];
+        ? (transcriptData.segments as Segment[]) : [];
 
       const clipSegments = allSegments.filter(
         s => s.end > clipData.start_sec && s.start < clipData.end_sec
       );
 
       return {
-        clip: clipData as { id: string; start_sec: number; end_sec: number; caption_style: string; aspect_ratio: string; project_id: string },
+        clip: clipData as ClipRow,
         segments: clipSegments,
         r2Key: projectData.r2_key as string,
+        isYouTube: isYouTubeUrl(projectData.r2_key),
       };
-    }) as { clip: { id: string; start_sec: number; end_sec: number; caption_style: string; aspect_ratio: string; project_id: string }; segments: Segment[]; r2Key: string };
+    }) as { clip: ClipRow; segments: Segment[]; r2Key: string; isYouTube: boolean };
 
-    // Step 2 — download source video
-    await step.run("download-video", async () => {
-      if (isYouTubeUrl(r2Key)) {
-        await downloadYouTubeVideo(r2Key, sourcePath);
-      } else {
-        const buffer = await downloadR2Object(r2Key);
-        await fs.writeFile(sourcePath, buffer);
+    const { clip, segments, r2Key, isYouTube } = stepOneResult;
+
+    // ── Step 2: resolve an HTTPS URL Remotion's Chromium can fetch ──
+    // R2 video  → presigned URL (no download needed at all)
+    // YouTube   → download locally, re-upload to R2 temp, presign
+    const videoUrl = await step.run("resolve-video-url", async () => {
+      if (!isYouTube) {
+        // Direct R2 presigned URL — Chromium fetches it over HTTPS
+        return getR2PresignedUrl(r2Key, 3 * 3600);
       }
-    });
 
-    // Step 3 — render with Remotion (captions as React JSX, no drawtext needed)
+      // YouTube: download → upload to R2 temp
+      const ytSourcePath = path.join(os.tmpdir(), `clipcrafter-yt-${clipId}.mp4`);
+      const ytTempR2Key = `temp-sources/${projectId}/${clipId}.mp4`;
+      try {
+        await downloadYouTubeVideo(r2Key, ytSourcePath);
+        const buf = await fs.readFile(ytSourcePath);
+        await r2Client.send(new PutObjectCommand({
+          Bucket: R2_BUCKET, Key: ytTempR2Key, Body: buf, ContentType: "video/mp4",
+        }));
+        return getR2PresignedUrl(ytTempR2Key, 3 * 3600);
+      } finally {
+        await fs.unlink(ytSourcePath).catch(() => undefined);
+      }
+    }) as string;
+
+    // ── Step 3: render with Remotion (videoUrl is always HTTPS) ──
     await step.run("trim-and-render", async () => {
-      const captions = withCaptions
-        ? toCaptions(segments, clip.start_sec, clip.end_sec)
-        : [];
-
       await renderWithRemotion({
-        videoSrc: sourcePath,      // local file path
+        videoSrc: videoUrl,
         startSec: clip.start_sec,
         endSec: clip.end_sec,
-        captions,
+        captions: withCaptions ? toCaptions(segments, clip.start_sec, clip.end_sec) : [],
         captionStyle: clip.caption_style,
         withCaptions,
         outputPath,
       });
     });
 
-    // Step 4 — upload to R2 and generate presigned URL
+    // ── Step 4: upload rendered clip to R2 ──
     const exportUrl = await step.run("upload-to-r2", async () => {
-      const outputBuffer = await fs.readFile(outputPath);
       const exportKey = `exports/${projectId}/${clipId}.mp4`;
-
       await r2Client.send(new PutObjectCommand({
         Bucket: R2_BUCKET,
         Key: exportKey,
-        Body: outputBuffer,
+        Body: await fs.readFile(outputPath),
         ContentType: "video/mp4",
       }));
 
       const presignedUrl = await getSignedUrl(
         r2Client,
         new GetObjectCommand({ Bucket: R2_BUCKET, Key: exportKey }),
-        { expiresIn: 7 * 24 * 3600 } // 1 week
+        { expiresIn: 7 * 24 * 3600 }
       );
 
-      await supabaseAdmin
-        .from("clips")
+      await supabaseAdmin.from("clips")
         .update({ status: "exported", export_url: presignedUrl })
         .eq("id", clipId);
 
       return presignedUrl;
     }) as string;
 
-    // Step 5 — cleanup temp files
+    // ── Step 5: cleanup ──
     await step.run("cleanup", async () => {
-      await Promise.allSettled([
-        fs.unlink(sourcePath),
-        fs.unlink(outputPath),
-      ]);
+      await fs.unlink(outputPath).catch(() => undefined);
     });
 
     return { clipId, projectId, status: "exported", exportUrl };
+
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    await supabaseAdmin
-      .from("clips")
-      .update({ status: "pending" })
-      .eq("id", clipId);
-
-    // Best-effort cleanup
-    await Promise.allSettled([
-      fs.unlink(sourcePath).catch(() => undefined),
-      fs.unlink(outputPath).catch(() => undefined),
-    ]);
-
+    await supabaseAdmin.from("clips").update({ status: "pending" }).eq("id", clipId);
+    await fs.unlink(outputPath).catch(() => undefined);
     return { clipId, status: "failed", error: errorMessage };
   }
 }
