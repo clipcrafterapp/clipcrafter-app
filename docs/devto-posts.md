@@ -15,6 +15,10 @@ Summary: One line about what the post covers.
 
 <!-- Add new posts here, newest first -->
 
+## 2026-03-23 — [How to Run Remotion Inside a Next.js App Without Webpack Losing Its Mind](https://dev.to/nareshipme/how-to-run-remotion-inside-a-nextjs-app-without-webpack-losing-its-mind-40mc)
+Tags: nextjs, remotion, typescript, docker
+Summary: 5 concrete fixes for embedding Remotion in a Next.js 15 App Router project — serverExternalPackages, spawning a standalone render script, separate tsconfig for src/remotion, file:// vs HTTPS URLs for Chromium, and Docker setup with CHROME_EXECUTABLE_PATH.
+
 ## 2026-03-22 — [Inngest Retries and the Stale Event Payload Trap](https://dev.to/nareshipme/inngest-retries-and-the-stale-event-payload-trap-33ce)
 Tags: inngest, typescript, nextjs, webdev
 Summary: Why Inngest retries fail when you read mutable data from the event payload — and the fix: pass only stable IDs in events, read everything else fresh from the DB inside each step.

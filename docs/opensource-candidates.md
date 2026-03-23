@@ -35,6 +35,18 @@ Modules that could be extracted and open sourced independently.
 - When a module is ready, extract to `packages/<name>` with its own `package.json`
 - Publish to npm under `@toolnexus/<name>` or as standalone
 
+## Updated 2026-03-23
+
+Today's commits brought the full Remotion integration: replacing ffmpeg drawtext with Remotion for caption rendering, externalizing from Next.js webpack, spawning a standalone render script, and deploying via Docker on Railway.
+
+New candidate identified:
+
+| Module | Location | Description | Blocker |
+|--------|----------|-------------|---------|
+| Remotion Render Runner | `src/scripts/render.mjs` + `src/lib/render-video.ts` | Spawn-based Remotion renderer that accepts video URL + captions JSON and outputs MP4 — cleanly isolated from Next.js | Composition is still project-specific (CaptionedVideo); would need to accept a generic composition ID + props schema |
+
+No new open-source candidates from the graph architecture commits (segment/clip model is product-specific). The `render-video.ts` spawn pattern is generic enough to extract once the composition interface is decoupled.
+
 ## Updated 2026-03-22
 
 Today's commits (auto-clip mode, topic discovery, yt-dlp fixes, Inngest payload fix) are product-specific. No new open-source candidates surfaced. The Inngest "read fresh from DB, not event payload" pattern was the notable general lesson — documented in today's dev.to post rather than as extractable code.
