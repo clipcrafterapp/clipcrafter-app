@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import {
   ReactFlow,
   Background,
@@ -319,23 +319,6 @@ export default function VideoKnowledgeGraph({
     });
   }, [nodes, selectedSegmentIds, onSegmentClick, onSegmentSelect]);
 
-  const handleAddToReel = useCallback(async () => {
-    const segments = graph.segments.filter(s => selectedSegmentIds.has(s.id));
-    const projectId = window.location.pathname.split("/").at(-1);
-    await fetch(`/api/projects/${projectId}/clips/from-segments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        segments: segments.map(s => ({
-          start: s.start,
-          end: s.end,
-          text: s.hookSentence,
-          topic: graph.nodes.find(n => n.id === s.topicId)?.label ?? "",
-        })),
-      }),
-    });
-  }, [graph, selectedSegmentIds]);
-
   return (
     <div className="relative w-full h-full bg-gray-950">
       <ReactFlow
@@ -360,19 +343,6 @@ export default function VideoKnowledgeGraph({
           className="!bg-gray-900 !border-gray-700 !text-gray-300"
         />
       </ReactFlow>
-
-      {/* Floating "Add to Reel" button */}
-      {selectedSegmentIds.size > 0 && (
-        <div className="absolute bottom-6 right-6 z-10">
-          <button
-            type="button"
-            onClick={handleAddToReel}
-            className="px-5 py-3 bg-violet-600 hover:bg-violet-500 rounded-xl text-sm font-semibold text-white shadow-lg transition-colors"
-          >
-            + Add {selectedSegmentIds.size} segment{selectedSegmentIds.size !== 1 ? "s" : ""} to Reel
-          </button>
-        </div>
-      )}
     </div>
   );
 }

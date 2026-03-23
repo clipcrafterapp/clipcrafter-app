@@ -165,6 +165,8 @@ export function ProjectDetailContent({ id }: { id: string }) {
   // Graph view state
   const [viewMode, setViewMode] = useState<"list" | "graph">("list");
   const [graphSelectedIds, setGraphSelectedIds] = useState<Set<string>>(new Set());
+  const [editedSegmentTimes, setEditedSegmentTimes] = useState<Record<string, { start: number; end: number }>>({});
+  const [graphExporting, setGraphExporting] = useState(false);
 
   // Sync selections when switching views (match by time range ±1s tolerance)
   function switchView(mode: "list" | "graph") {
@@ -829,52 +831,191 @@ export function ProjectDetailContent({ id }: { id: string }) {
 
                     {/* Graph view */}
                     {viewMode === "graph" && videoGraph && (
-                      <div className="rounded-xl overflow-hidden border border-gray-800" style={{ height: 480 }}>
-                        <VideoKnowledgeGraph
-                          graph={videoGraph}
-                          onSegmentClick={segment => {
-                            if (videoRef.current) {
-                              videoRef.current.currentTime = segment.start;
-                              videoRef.current.play();
-                            }
-                          }}
-                          selectedSegmentIds={graphSelectedIds}
-                          onSegmentSelect={(segId, selected) => {
-                            setGraphSelectedIds(prev => {
-                              const next = new Set(prev);
-                              if (selected) next.add(segId);
-                              else next.delete(segId);
-                              return next;
-                            });
-                          }}
-                        />
-                      </div>
-                    )}
-                    {viewMode === "graph" && graphSelectedIds.size > 0 && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!videoGraph) return;
-                          const segments = videoGraph.segments.filter(s => graphSelectedIds.has(s.id));
-                          await fetch(`/api/projects/${id}/clips/from-segments`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              segments: segments.map(s => ({
-                                start: s.start,
-                                end: s.end,
-                                text: s.hookSentence,
-                                topic: videoGraph.nodes.find(n => n.id === s.topicId)?.label ?? "",
-                              })),
-                            }),
-                          });
-                          setGraphSelectedIds(new Set());
-                          await fetchClips();
-                        }}
-                        className="w-full px-4 py-3 bg-violet-600 hover:bg-violet-500 rounded-xl text-sm font-semibold text-white transition-colors min-h-[44px]"
-                      >
-                        + Add {graphSelectedIds.size} segment{graphSelectedIds.size !== 1 ? "s" : ""} to clips
-                      </button>
+                      <>
+                        <div className="rounded-xl overflow-hidden border border-gray-800" style={{ height: 480 }}>
+                          <VideoKnowledgeGraph
+                            graph={videoGraph}
+                            onSegmentClick={segment => {
+                              if (videoRef.current) {
+                                videoRef.current.currentTime = segment.start;
+                                videoRef.current.play();
+                              }
+                            }}
+                            selectedSegmentIds={graphSelectedIds}
+                            onSegmentSelect={(segId, selected) => {
+                              setGraphSelectedIds(prev => {
+                                const next = new Set(prev);
+                                if (selected) next.add(segId);
+                                else next.delete(segId);
+                                return next;
+                              });
+                              // Keep editedSegmentTimes in sync
+                              if (!selected) {
+                                setEditedSegmentTimes(prev => {
+                                  const next = { ...prev };
+                                  delete next[segId];
+                                  return next;
+                                });
+                              }
+                            }}
+                          />
+                        </div>
+
+                        {/* Selected segments tray */}
+                        {graphSelectedIds.size > 0 && (() => {
+                          const selectedSegs = videoGraph.segments.filter(s => graphSelectedIds.has(s.id));
+                          return (
+                            <div className="flex flex-col gap-3 bg-gray-900 border border-gray-700 rounded-xl p-4">
+                              <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-semibold text-white">
+                                  {selectedSegs.length} segment{selectedSegs.length !== 1 ? "s" : ""} selected
+                                </h3>
+                                <button
+                                  type="button"
+                                  onClick={() => setGraphSelectedIds(new Set())}
+                                  className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                                >
+                                  Clear all
+                                </button>
+                              </div>
+
+                              {selectedSegs.map(seg => {
+                                const topic = videoGraph.nodes.find(n => n.id === seg.topicId)?.label ?? "";
+                                const edited = editedSegmentTimes[seg.id];
+                                const start = edited?.start ?? seg.start;
+                                const end = edited?.end ?? seg.end;
+                                const isDirty = edited !== undefined;
+
+                                return (
+                                  <div key={seg.id} className="flex flex-col gap-2 bg-gray-800 rounded-lg p-3">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <p className="text-xs text-gray-200 leading-snug flex-1">{seg.hookSentence}</p>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setGraphSelectedIds(prev => {
+                                            const next = new Set(prev);
+                                            next.delete(seg.id);
+                                            return next;
+                                          });
+                                          setEditedSegmentTimes(prev => {
+                                            const next = { ...prev };
+                                            delete next[seg.id];
+                                            return next;
+                                          });
+                                        }}
+                                        className="shrink-0 text-gray-600 hover:text-red-400 transition-colors text-xs"
+                                        title="Remove"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                    {topic && (
+                                      <span className="text-xs text-violet-400 bg-violet-900/40 px-2 py-0.5 rounded-full self-start">
+                                        {topic}
+                                      </span>
+                                    )}
+                                    <div className="flex items-center gap-2">
+                                      <label className="text-xs text-gray-500 w-10 shrink-0">Start</label>
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        min="0"
+                                        value={start.toFixed(1)}
+                                        onChange={e => setEditedSegmentTimes(prev => ({
+                                          ...prev,
+                                          [seg.id]: { start: parseFloat(e.target.value) || 0, end: prev[seg.id]?.end ?? seg.end },
+                                        }))}
+                                        className="w-20 bg-gray-700 border border-gray-600 text-gray-200 text-xs rounded px-2 py-1 font-mono"
+                                      />
+                                      <label className="text-xs text-gray-500 w-6 shrink-0">End</label>
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        min="0"
+                                        value={end.toFixed(1)}
+                                        onChange={e => setEditedSegmentTimes(prev => ({
+                                          ...prev,
+                                          [seg.id]: { start: prev[seg.id]?.start ?? seg.start, end: parseFloat(e.target.value) || 0 },
+                                        }))}
+                                        className="w-20 bg-gray-700 border border-gray-600 text-gray-200 text-xs rounded px-2 py-1 font-mono"
+                                      />
+                                      <span className="text-xs text-gray-500 font-mono">
+                                        {((end - start)).toFixed(1)}s
+                                      </span>
+                                      {isDirty && (
+                                        <button
+                                          type="button"
+                                          title="Reset to original"
+                                          onClick={() => setEditedSegmentTimes(prev => {
+                                            const next = { ...prev };
+                                            delete next[seg.id];
+                                            return next;
+                                          })}
+                                          className="ml-auto text-xs text-gray-500 hover:text-yellow-400 transition-colors"
+                                        >
+                                          ↺ reset
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+
+                              <button
+                                type="button"
+                                disabled={graphExporting}
+                                onClick={async () => {
+                                  if (!videoGraph) return;
+                                  setGraphExporting(true);
+                                  try {
+                                    const segments = videoGraph.segments
+                                      .filter(s => graphSelectedIds.has(s.id))
+                                      .map(s => {
+                                        const edited = editedSegmentTimes[s.id];
+                                        return {
+                                          start: edited?.start ?? s.start,
+                                          end: edited?.end ?? s.end,
+                                          text: s.hookSentence,
+                                          topic: videoGraph.nodes.find(n => n.id === s.topicId)?.label ?? "",
+                                        };
+                                      });
+                                    // Create clips from segments
+                                    const r = await fetch(`/api/projects/${id}/clips/from-segments`, {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ segments }),
+                                    });
+                                    if (!r.ok) throw new Error("Failed to create clips");
+                                    const { clips: newClips } = await r.json() as { clips: Clip[] };
+                                    // Queue export for all created clips
+                                    await fetch(`/api/projects/${id}/clips/export-batch`, {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({
+                                        clipIds: newClips.map((c: Clip) => c.id),
+                                        withCaptions: true,
+                                      }),
+                                    });
+                                    setGraphSelectedIds(new Set());
+                                    setEditedSegmentTimes({});
+                                    await fetchClips();
+                                    // Switch to list view so user can track export progress
+                                    switchView("list");
+                                  } catch (err) {
+                                    console.error(err);
+                                  } finally {
+                                    setGraphExporting(false);
+                                  }
+                                }}
+                                className="w-full px-4 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-sm font-semibold text-white transition-colors min-h-[44px]"
+                              >
+                                {graphExporting ? "Exporting…" : `Export ${selectedSegs.length} segment${selectedSegs.length !== 1 ? "s" : ""} →`}
+                              </button>
+                            </div>
+                          );
+                        })()}
+                      </>
                     )}
 
                     {/* Topic filter chips — derived directly from clips */}
