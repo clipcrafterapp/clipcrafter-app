@@ -8,21 +8,9 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { inngest } from "@/lib/inngest";
 import { supabaseAdmin } from "@/lib/supabase";
 import { r2Client, R2_BUCKET } from "@/lib/r2";
+import type { Caption } from "@remotion/captions";
 
 const execFileAsync = promisify(execFile);
-
-// Check once at module load whether this ffmpeg supports drawtext (requires libfreetype)
-let _drawtextSupported: boolean | null = null;
-async function drawtextSupported(): Promise<boolean> {
-  if (_drawtextSupported !== null) return _drawtextSupported;
-  try {
-    const { stdout } = await execFileAsync("ffmpeg", ["-filters"], { timeout: 5000 });
-    _drawtextSupported = stdout.includes("drawtext");
-  } catch {
-    _drawtextSupported = false;
-  }
-  return _drawtextSupported;
-}
 
 export interface ClipExportEventData {
   clipId: string;
@@ -59,90 +47,72 @@ async function downloadYouTubeVideo(url: string, outputPath: string): Promise<vo
   ], { timeout: 5 * 60 * 1000 });
 }
 
-function escapeDrawtext(text: string): string {
-  // Escape special characters for ffmpeg drawtext filter
-  return text
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "\\'")
-    .replace(/:/g, "\\:")
-    .replace(/\[/g, "\\[")
-    .replace(/\]/g, "\\]");
-}
-
-function stripSpeakerTag(text: string): string {
-  return text.replace(/^\[Speaker \d+\]\s*/, "");
-}
-
-function buildCaptionStyle(style: string): Record<string, string> {
-  switch (style) {
-    case "hormozi":
-      return {
-        fontcolor: "yellow",
-        fontsize: "30",
-        box: "1",
-        boxcolor: "black@0.9",
-        boxborderw: "10",
-      };
-    case "modern":
-      return {
-        fontcolor: "white",
-        fontsize: "26",
-        box: "1",
-        boxcolor: "black@0.6",
-        boxborderw: "8",
-      };
-    case "neon":
-      return {
-        fontcolor: "lime",
-        fontsize: "26",
-        shadowcolor: "lime",
-        shadowx: "2",
-        shadowy: "2",
-      };
-    case "minimal":
-    default:
-      return {
-        fontcolor: "white",
-        fontsize: "24",
-      };
-  }
-}
-
 interface Segment {
   start: number;
   end: number;
   text: string;
 }
 
-function buildDrawtextFilter(
-  segments: Segment[],
-  clipStart: number,
-  clipEnd: number,
-  captionStyle: string
-): string | null {
-  const relevant = segments.filter(s => s.end > clipStart && s.start < clipEnd);
-  if (relevant.length === 0) return null;
+function stripSpeakerTag(text: string): string {
+  return text.replace(/^\[Speaker \d+\]\s*/, "");
+}
 
-  const style = buildCaptionStyle(captionStyle);
+/** Convert transcript segments → Remotion Caption format */
+function toCaptions(segments: Segment[], clipStart: number, clipEnd: number): Caption[] {
+  return segments
+    .filter(s => s.end > clipStart && s.start < clipEnd)
+    .map(s => ({
+      text: stripSpeakerTag(s.text),
+      startMs: s.start * 1000,
+      endMs: s.end * 1000,
+      timestampMs: s.start * 1000,
+      confidence: 1,
+    }));
+}
 
-  const filters = relevant.map(seg => {
-    const tStart = Math.max(0, seg.start - clipStart);
-    const tEnd = Math.min(clipEnd - clipStart, seg.end - clipStart);
-    const text = escapeDrawtext(stripSpeakerTag(seg.text));
+/** Render clip with Remotion (captions as React JSX, no drawtext needed) */
+async function renderWithRemotion(opts: {
+  videoSrc: string;
+  startSec: number;
+  endSec: number;
+  captions: Caption[];
+  captionStyle: string;
+  withCaptions: boolean;
+  outputPath: string;
+}): Promise<void> {
+  // Dynamic import — keeps this out of the Next.js bundle
+  const { bundle } = await import("@remotion/bundler");
+  const { renderMedia, selectComposition } = await import("@remotion/renderer");
 
-    const styleStr = Object.entries(style)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(":");
+  const entryPoint = path.resolve(process.cwd(), "src/remotion/index.ts");
+  const bundled = await bundle({ entryPoint, enableCaching: true });
 
-    return (
-      `drawtext=text='${text}'` +
-      `:enable='between(t,${tStart.toFixed(3)},${tEnd.toFixed(3)})'` +
-      `:x=(w-text_w)/2:y=h-th-60` +
-      `:${styleStr}`
-    );
+  const inputProps = {
+    videoSrc: opts.videoSrc,
+    startSec: opts.startSec,
+    endSec: opts.endSec,
+    captions: opts.captions,
+    captionStyle: opts.captionStyle,
+    withCaptions: opts.withCaptions,
+  };
+
+  const composition = await selectComposition({
+    serveUrl: bundled,
+    id: "ClipComposition",
+    inputProps,
   });
 
-  return filters.join(",");
+  await renderMedia({
+    composition,
+    serveUrl: bundled,
+    codec: "h264",
+    outputLocation: opts.outputPath,
+    inputProps,
+    concurrency: 2,
+    onProgress: ({ progress }) => {
+      console.log(`[remotion] rendering ${(progress * 100).toFixed(0)}%`);
+    },
+  });
 }
 
 // ── main handler ──────────────────────────────────────────────────────────────
@@ -210,33 +180,21 @@ export async function clipExportHandler(
       }
     });
 
-    // Step 3 — trim and render with optional captions
+    // Step 3 — render with Remotion (captions as React JSX, no drawtext needed)
     await step.run("trim-and-render", async () => {
-      const duration = clip.end_sec - clip.start_sec;
+      const captions = withCaptions
+        ? toCaptions(segments, clip.start_sec, clip.end_sec)
+        : [];
 
-      const canDrawtext = await drawtextSupported();
-      const drawtextFilter =
-        withCaptions && canDrawtext && segments.length > 0
-          ? buildDrawtextFilter(segments, clip.start_sec, clip.end_sec, clip.caption_style)
-          : null;
-
-      if (withCaptions && !canDrawtext) {
-        console.warn("[clip-export] drawtext not supported by this ffmpeg build — exporting without captions");
-      }
-
-      const args: string[] = ["-y", "-i", sourcePath, "-ss", String(clip.start_sec), "-t", String(duration)];
-
-      if (drawtextFilter) {
-        // Re-encode with caption overlay
-        args.push("-vf", drawtextFilter, "-c:v", "libx264", "-crf", "23", "-preset", "fast");
-      } else {
-        // Stream-copy video (no re-encode) — much faster
-        args.push("-c:v", "copy");
-      }
-
-      args.push("-c:a", "aac", "-movflags", "+faststart", outputPath);
-
-      await execFileAsync("ffmpeg", args, { timeout: 10 * 60 * 1000 });
+      await renderWithRemotion({
+        videoSrc: sourcePath,      // local file path
+        startSec: clip.start_sec,
+        endSec: clip.end_sec,
+        captions,
+        captionStyle: clip.caption_style,
+        withCaptions,
+        outputPath,
+      });
     });
 
     // Step 4 — upload to R2 and generate presigned URL
