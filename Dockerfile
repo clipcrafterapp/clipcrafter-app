@@ -25,7 +25,8 @@ RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o 
 
 WORKDIR /app
 
-# Install ALL deps first (needed for build)
+# Install ALL deps (including devDeps needed for build like @tailwindcss/postcss)
+# cache-bust: 2026-03-23
 COPY package*.json ./
 RUN npm ci
 
