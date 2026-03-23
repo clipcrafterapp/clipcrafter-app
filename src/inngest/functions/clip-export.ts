@@ -89,7 +89,7 @@ async function renderWithRemotion(opts: {
   try {
     const { stdout, stderr } = await execFileAsync(
       process.execPath,          // same node binary
-      ["--experimental-vm-modules", scriptPath, propsPath, opts.outputPath],
+      [scriptPath, propsPath, opts.outputPath],
       { timeout: 15 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }
     );
     if (stdout) console.log("[remotion]", stdout.slice(-500));

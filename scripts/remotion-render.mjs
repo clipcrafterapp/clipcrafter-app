@@ -33,6 +33,11 @@ if (!propsPath || !outputPath) {
 
 const props = JSON.parse(readFileSync(propsPath, "utf8"));
 
+// Remotion renders via headless Chromium — local paths must be file:// URLs
+if (props.videoSrc && !props.videoSrc.startsWith("http") && !props.videoSrc.startsWith("file://")) {
+  props.videoSrc = "file://" + props.videoSrc;
+}
+
 const { bundle } = await import("@remotion/bundler");
 const { renderMedia, selectComposition } = await import("@remotion/renderer");
 
