@@ -166,6 +166,36 @@ export function ProjectDetailContent({ id }: { id: string }) {
   const [viewMode, setViewMode] = useState<"list" | "graph">("list");
   const [graphSelectedIds, setGraphSelectedIds] = useState<Set<string>>(new Set());
 
+  // Sync selections when switching views (match by time range ±1s tolerance)
+  function switchView(mode: "list" | "graph") {
+    if (mode === "graph" && videoGraph) {
+      // list → graph: highlight segments whose time matches selected clips
+      const selected = clips?.filter(c => selectedClipIds.has(c.id)) ?? [];
+      const matched = new Set<string>();
+      for (const clip of selected) {
+        for (const seg of videoGraph.segments) {
+          if (Math.abs(seg.start - clip.start_sec) < 1 && Math.abs(seg.end - clip.end_sec) < 1) {
+            matched.add(seg.id);
+          }
+        }
+      }
+      setGraphSelectedIds(matched);
+    } else if (mode === "list" && videoGraph) {
+      // graph → list: check clips whose time matches selected segments
+      const selectedSegs = videoGraph.segments.filter(s => graphSelectedIds.has(s.id));
+      const matched = new Set<string>();
+      for (const seg of selectedSegs) {
+        const clip = clips?.find(c =>
+          Math.abs(c.start_sec - seg.start) < 1 && Math.abs(c.end_sec - seg.end) < 1
+        );
+        if (clip) matched.add(clip.id);
+      }
+      // merge into existing clip selection (don't clear unmatched)
+      setSelectedClipIds(prev => new Set([...prev, ...matched]));
+    }
+    setViewMode(mode);
+  }
+
   // Highlight generation options
   const [clipCount, setClipCount] = useState<number | "auto">("auto");
   const [clipPrompt, setClipPrompt] = useState("");
@@ -687,7 +717,7 @@ export function ProjectDetailContent({ id }: { id: string }) {
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => setViewMode("list")}
+                          onClick={() => switchView("list")}
                           className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors min-h-[32px] ${
                             viewMode === "list"
                               ? "bg-violet-600 text-white"
@@ -698,7 +728,7 @@ export function ProjectDetailContent({ id }: { id: string }) {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setViewMode("graph")}
+                          onClick={() => switchView("graph")}
                           className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors min-h-[32px] ${
                             viewMode === "graph"
                               ? "bg-violet-600 text-white"
