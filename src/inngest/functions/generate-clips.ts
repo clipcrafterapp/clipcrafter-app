@@ -55,7 +55,7 @@ export const generateClips = inngest.createFunction(
     const graph: VideoGraph = await step.run("build-video-graph", async () => {
       if (isManual) {
         // Manual: use highlights.ts for targeted extraction
-        const { generateHighlights, formatSegmentsForHighlights: fmt } = await import("@/lib/highlights");
+        const { generateHighlights } = await import("@/lib/highlights");
         const { buildGraphFromClips } = await import("@/lib/video-graph");
         const highlights = await generateHighlights(formatted, transcript, { count, prompt, targetDuration });
         return buildGraphFromClips(highlights);

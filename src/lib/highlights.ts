@@ -121,7 +121,7 @@ Rules:
 
 export async function buildTopicMap(
   formattedTranscript: string,
-  rawSegments: TranscriptSegmentInput[]
+  _rawSegments: TranscriptSegmentInput[]
 ): Promise<TopicMap[]> {
   console.log("Building topic map (one-pass)...");
   const raw = await callLLM(TOPIC_MAP_PROMPT(formattedTranscript));
@@ -310,7 +310,7 @@ export async function generateHighlights(
  */
 export async function enrichClipsForProject(
   projectId: string,
-  segments: Array<{ id: string; start: number; end: number; topicId?: string }>,
+  _segments: Array<{ id: string; start: number; end: number; topicId?: string }>,
   rawSegments: TranscriptSegmentInput[]
 ): Promise<void> {
   const { supabaseAdmin } = await import("@/lib/supabase");

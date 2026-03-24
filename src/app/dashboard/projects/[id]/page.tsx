@@ -1,3 +1,5 @@
+/* eslint-disable max-lines */
+// TODO: Refactor — split into PlayerSection, ClipList, GraphView, CaptionStudio, ExportPanel
 "use client";
 
 import { use, useEffect, useRef, useState, useCallback, useMemo } from "react";

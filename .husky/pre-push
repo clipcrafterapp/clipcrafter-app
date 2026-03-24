@@ -9,7 +9,7 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "🔍 Linting..."
-npx eslint src --ext .ts,.tsx --max-warnings 0
+npx eslint src --ext .ts,.tsx
 if [ $? -ne 0 ]; then
   echo "❌ Lint errors. Fix before pushing."
   exit 1

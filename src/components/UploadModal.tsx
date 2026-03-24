@@ -31,7 +31,7 @@ function isYouTubeUrl(url: string): boolean {
   return /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/.+/.test(url.trim());
 }
 
-function isYouTubeLive(url: string): boolean {
+function _isYouTubeLive(url: string): boolean {
   return /youtube\.com\/live\//i.test(url);
 }
 

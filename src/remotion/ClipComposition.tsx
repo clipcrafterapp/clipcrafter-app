@@ -10,8 +10,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import { createTikTokStyleCaptions } from "@remotion/captions";
-import type { Caption } from "@remotion/captions";
+import { createTikTokStyleCaptions, type Caption } from "@remotion/captions";
 
 // ── Caption style presets ─────────────────────────────────────────────────────
 
