@@ -29,7 +29,24 @@ These rules apply to all development on this project. Every agent, contributor, 
       Then the file uploads to R2 and a project is created
   ```
 
-## 3. Sequential Commits (Conventional Commits)
+## 3. Git Workflow — Branch → PR → Review → Merge
+
+- **Never push directly to `main`** — it is protected
+- Always work on a feature branch:
+  ```
+  git checkout -b feat/my-feature
+  git push origin feat/my-feature
+  gh pr create --title "feat: ..." --body "..."
+  ```
+- Every PR requires **1 approval** before merging
+- PRs must pass CI checks (typecheck + lint) before merge
+- **Pre-push hooks run locally** — TypeScript + ESLint checks before code reaches GitHub
+- Stale reviews are dismissed when new commits are pushed — re-approval required
+- Branch naming: `feat/`, `fix/`, `chore/`, `docs/` prefixes
+
+---
+
+## 4. Sequential Commits (Conventional Commits)
 
 - Every commit must be **atomic** — one logical change per commit
 - Use **Conventional Commit** format:
