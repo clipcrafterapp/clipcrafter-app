@@ -149,6 +149,28 @@ Every non-trivial bug found during development must be logged in `docs/bug-log.m
 - If it's a pattern that could bite other devs, mark `Post-worthy: Yes`
 - Review the log during daily dev.to post time (Rule 5) — use post-worthy bugs as content
 
+## 13. Keep ARCHITECTURE.md Updated
+
+`docs/ARCHITECTURE.md` is the single source of truth for all third-party services, infrastructure, and system design.
+
+**Update it whenever:**
+- A new third-party service or SDK is added or removed
+- An existing service changes (new plan, new endpoint, new auth method)
+- A new env var is introduced
+- Infrastructure changes (new Railway service, new Vercel project, new R2 bucket)
+- A significant architectural decision is made (e.g. switching transcription provider, adding a new worker)
+- A new gotcha or known issue is discovered
+
+**What to update:**
+- Add/remove the service section with dashboard URL, docs URL, env vars, and usage notes
+- Update the architecture diagram if the data flow changes
+- Add new rows to the Gotchas table for hard-learned lessons
+- Update env vars list for the affected service
+
+**Rule:** No PR or phase completion without updating `docs/ARCHITECTURE.md` if any of the above changed.
+
+---
+
 ## 12. Code Quality — KISS, DRY, SOLID, YAGNI
 
 After every phase (and before starting the next), do a quick abstraction audit:
