@@ -141,9 +141,7 @@ function buildVideoHandlers(opts: VideoHandlerOpts) {
     },
     handleTimelineClick: makeHandleTimelineClick(timelineRef, durationRef, dragStateRef, videoRef),
     handleHandleMouseDown: makeHandleHandleMouseDown(
-      timelineRef,
-      durationRef,
-      dragStateRef,
+      { timelineRef, durationRef, dragStateRef, videoRef, clipsRef },
       setClips
     ),
     switchView: (mode: "list" | "graph") => s.setViewMode(mode),
