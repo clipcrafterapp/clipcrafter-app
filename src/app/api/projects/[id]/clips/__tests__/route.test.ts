@@ -180,7 +180,13 @@ Feature("GET /api/projects/[id]/clips", () => {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 single: vi.fn().mockResolvedValue({
-                  data: { id: "proj_1", user_id: "user_123", clips_status: "idle", topic_map: null, video_graph: null },
+                  data: {
+                    id: "proj_1",
+                    user_id: "user_123",
+                    clips_status: "idle",
+                    topic_map: null,
+                    video_graph: null,
+                  },
                   error: null,
                 }),
               }),

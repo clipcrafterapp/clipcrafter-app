@@ -34,7 +34,15 @@ describe("useStatusPolling", () => {
 
     renderHook(() =>
       useStatusPolling({
-        data: { id: "p1", status: "completed", error_message: null, completed_at: null, processing_log: [], transcript: null, highlights: null },
+        data: {
+          id: "p1",
+          status: "completed",
+          error_message: null,
+          completed_at: null,
+          processing_log: [],
+          transcript: null,
+          highlights: null,
+        },
         fetchStatus,
       })
     );
@@ -48,7 +56,15 @@ describe("useStatusPolling", () => {
 
     renderHook(() =>
       useStatusPolling({
-        data: { id: "p1", status: "processing", error_message: null, completed_at: null, processing_log: [], transcript: null, highlights: null },
+        data: {
+          id: "p1",
+          status: "processing",
+          error_message: null,
+          completed_at: null,
+          processing_log: [],
+          transcript: null,
+          highlights: null,
+        },
         fetchStatus,
       })
     );

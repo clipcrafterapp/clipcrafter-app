@@ -33,7 +33,10 @@ Feature("GET /api/projects/[id]/status", () => {
     it("Given a valid project, Then returns id, status, transcript, highlights", async () => {
       mockAuth.mockResolvedValue({ userId: "user_123" });
 
-      const mockTranscriptRow = { id: "tx_1", segments: [{ id: 0, start: 0, end: 5, text: "Hello world" }] };
+      const mockTranscriptRow = {
+        id: "tx_1",
+        segments: [{ id: 0, start: 0, end: 5, text: "Hello world" }],
+      };
       const mockHighlightRow = { id: "hl_1", segments: [{ start: 0, end: 5, text: "clip1" }] };
 
       // For the completed project, the route calls:

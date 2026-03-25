@@ -24,9 +24,7 @@ describe("ProcessingStatus", () => {
     });
 
     it("highlights the active stage for extracting_audio", () => {
-      render(
-        <ProcessingStatus status="extracting_audio" errorMessage={null} onRetry={vi.fn()} />
-      );
+      render(<ProcessingStatus status="extracting_audio" errorMessage={null} onRetry={vi.fn()} />);
       const extractingItem = screen.getByText(/extracting audio/i);
       expect(extractingItem).toHaveClass("text-yellow-400");
     });
@@ -36,11 +34,7 @@ describe("ProcessingStatus", () => {
     it("shows error message and retry button when status is failed", () => {
       const mockRetry = vi.fn();
       render(
-        <ProcessingStatus
-          status="failed"
-          errorMessage="Transcription failed"
-          onRetry={mockRetry}
-        />
+        <ProcessingStatus status="failed" errorMessage="Transcription failed" onRetry={mockRetry} />
       );
       expect(screen.getByText("Transcription failed")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();

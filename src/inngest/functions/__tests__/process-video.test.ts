@@ -123,9 +123,7 @@ const mockGenerateHighlights = vi.fn().mockResolvedValue([
 
 vi.mock("@/lib/highlights", () => ({
   generateHighlights: mockGenerateHighlights,
-  formatSegmentsForHighlights: vi
-    .fn()
-    .mockReturnValue("[00:00] Hello this is a test transcript."),
+  formatSegmentsForHighlights: vi.fn().mockReturnValue("[00:00] Hello this is a test transcript."),
 }));
 
 // --- os mock ---
