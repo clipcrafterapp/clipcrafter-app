@@ -248,3 +248,31 @@ After every phase (and before starting the next), do a quick abstraction audit:
 - [ ] Any imports that pull in a whole SDK just for one method?
 
 Document findings in `docs/abstraction-audit.md` with the phase name and what was found/fixed.
+
+---
+
+## 13. Test-Driven Development (TDD)
+
+All new features and bug fixes must ship with tests. No exceptions.
+
+**Rule:** Write tests before or alongside implementation. PRs without tests for new logic will be rejected in review.
+
+### What requires tests:
+- Every new utility function in `src/lib/`
+- Every new API route (happy path + key error cases)
+- Every non-trivial React component (user interactions, error states)
+- Every bug fix (regression test proving the bug is fixed)
+
+### What doesn't require tests:
+- Pure UI layout/styling changes
+- Config files, migrations
+- One-liner wrappers with no logic
+
+### Coverage target:
+- `src/lib/` → >70% line coverage
+- `src/app/api/` → >70% line coverage
+- CI reports coverage summary on every PR
+
+### No lint disabling:
+ESLint warnings must be fixed at source. `eslint-disable` comments are banned.
+Zero warnings is the target — warnings are treated as errors for new code.
