@@ -42,6 +42,7 @@ function makeHookResult(overrides: Partial<{ status: string; errorMessage: strin
     data: status
       ? {
           id: "proj-test-123",
+          title: "Test Project",
           status,
           error_message: overrides.errorMessage ?? null,
           completed_at: status === "completed" ? new Date().toISOString() : null,

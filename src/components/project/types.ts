@@ -30,6 +30,7 @@ export interface ProcessingLogEntry {
 
 export interface StatusData {
   id: string;
+  title: string;
   status: ProjectStatus;
   error_message: string | null;
   completed_at: string | null;

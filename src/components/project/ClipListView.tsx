@@ -261,39 +261,44 @@ function ExportBar({
   selectedClipIds,
   withCaptions,
   clips,
+  allApproved,
   onSelectAll,
   onDeselectAll,
   onToggleCaptions,
   onExportBatch,
+  onKeepAll,
 }: {
   sortedClips: Clip[];
   selectedClipIds: Set<string>;
   withCaptions: boolean;
   clips: Clip[] | null;
+  allApproved: boolean;
   onSelectAll: (ids: string[]) => void;
   onDeselectAll: () => void;
   onToggleCaptions: () => void;
   onExportBatch: () => void;
+  onKeepAll: () => void;
 }) {
   return (
-    <div className="sticky top-0 z-10 bg-gray-950 py-2 flex items-center gap-3 border-b border-gray-800 -mx-4 px-4">
-      <label className="flex items-center gap-1.5 cursor-pointer select-none min-h-[36px]">
-        <input
-          type="checkbox"
-          className="w-4 h-4 accent-violet-500"
-          checked={selectedClipIds.size === sortedClips.length}
-          ref={(el) => {
-            if (el)
-              el.indeterminate =
-                selectedClipIds.size > 0 && selectedClipIds.size < sortedClips.length;
-          }}
-          onChange={(e) => {
-            if (e.target.checked) onSelectAll(sortedClips.map((c) => c.id));
-            else onDeselectAll();
-          }}
-        />
-        <span className="text-xs text-gray-400">Select All</span>
-      </label>
+    <div className="sticky top-0 z-10 bg-gray-950 py-2 flex flex-wrap items-center gap-2 border-b border-gray-800 -mx-4 px-4">
+      <button
+        type="button"
+        onClick={() => {
+          if (selectedClipIds.size === sortedClips.length) onDeselectAll();
+          else onSelectAll(sortedClips.map((c) => c.id));
+        }}
+        className="px-3 py-1 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:text-white transition-colors min-h-[30px]"
+      >
+        {selectedClipIds.size === sortedClips.length ? "Deselect All" : "Select All"}
+      </button>
+      <button
+        type="button"
+        onClick={onKeepAll}
+        disabled={allApproved}
+        className="px-3 py-1 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:text-green-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors min-h-[30px]"
+      >
+        Keep All
+      </button>
       <button
         type="button"
         onClick={onToggleCaptions}
@@ -378,10 +383,16 @@ export function ClipListView({
           selectedClipIds={selectedClipIds}
           withCaptions={withCaptions}
           clips={clips}
+          allApproved={sortedClips.every((c) => c.status === "approved")}
           onSelectAll={onSelectAll}
           onDeselectAll={onDeselectAll}
           onToggleCaptions={onToggleCaptions}
           onExportBatch={onExportBatch}
+          onKeepAll={() => {
+            sortedClips.forEach((clip) => {
+              if (clip.status !== "approved") onClipAction(clip.id, { status: "approved" });
+            });
+          }}
         />
       )}
       {clipsStatus !== "generating" && sortedClips.length > 0 && (
