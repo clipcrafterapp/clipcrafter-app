@@ -5,6 +5,7 @@
 import { use, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { toast } from "sonner";
 
 const VideoKnowledgeGraph = dynamic(() => import("@/components/VideoKnowledgeGraph"), {
   ssr: false,
@@ -283,7 +284,9 @@ export function ProjectDetailContent({ id }: { id: string }) {
                 }
               }
             })
-            .catch(() => undefined);
+            .catch(() => {
+              toast.error("Failed to load video — please refresh");
+            });
         }
       }
     } finally {
@@ -351,27 +354,44 @@ export function ProjectDetailContent({ id }: { id: string }) {
   }, [clips?.length]);
 
   async function handleRetry() {
-    await fetch(`/api/projects/${id}/process`, { method: "POST" });
-    setLoading(true);
-    fetchStatus();
+    const toastId = toast.loading("Retrying processing…");
+    try {
+      const res = await fetch(`/api/projects/${id}/process`, { method: "POST" });
+      if (res.ok) {
+        toast.success("Processing restarted", { id: toastId });
+        setLoading(true);
+        fetchStatus();
+      } else {
+        toast.error("Failed to retry — please try again", { id: toastId });
+      }
+    } catch {
+      toast.error("Network error — please try again", { id: toastId });
+    }
   }
 
   async function handleDelete() {
     if (!confirm("Delete this project? This cannot be undone.")) return;
-    const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
-    if (res.ok) {
-      window.location.href = "/dashboard";
+    const toastId = toast.loading("Deleting project…");
+    try {
+      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Project deleted", { id: toastId });
+        window.location.href = "/dashboard";
+      } else {
+        toast.error("Failed to delete project", { id: toastId });
+      }
+    } catch {
+      toast.error("Network error — please try again", { id: toastId });
     }
   }
 
   async function handleGenerateClips() {
-    // trigger generating state;
+    const toastId = toast.loading("Generating clips…");
     try {
       const body: Record<string, unknown> = clipCount === "auto" ? {} : { count: clipCount };
       if (clipPrompt.trim()) body.prompt = clipPrompt.trim();
       if (clipTargetDuration && Number(clipTargetDuration) > 0)
         body.targetDuration = Number(clipTargetDuration);
-      // Reset clips so we show loading state while Inngest job runs
       setClips(null);
       setSelectedTopic(null);
       const res = await fetch(`/api/projects/${id}/clips`, {
@@ -380,9 +400,13 @@ export function ProjectDetailContent({ id }: { id: string }) {
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        setClipsStatus("generating"); // polling effect takes over
+        toast.success("Clip generation started", { id: toastId });
+        setClipsStatus("generating");
+      } else {
+        toast.error("Failed to start clip generation", { id: toastId });
       }
-    } finally {
+    } catch {
+      toast.error("Network error — please try again", { id: toastId });
     }
   }
 
@@ -400,30 +424,59 @@ export function ProjectDetailContent({ id }: { id: string }) {
     if (res.ok) {
       const json = await res.json();
       setClips((prev) => prev?.map((c) => (c.id === clipId ? { ...c, ...json.clip } : c)) ?? null);
+      if (update.status === "approved") toast.success("Clip kept ✓");
+      else if (update.status === "rejected") toast("Clip skipped");
+    } else {
+      toast.error("Failed to update clip");
     }
   }
 
   async function handleExportClip(clipId: string) {
-    const res = await fetch(`/api/clips/${clipId}/export`, { method: "POST" });
-    if (res.ok) {
-      setClips(
-        (prev) => prev?.map((c) => (c.id === clipId ? { ...c, status: "exporting" } : c)) ?? null
-      );
+    const toastId = toast.loading("Queuing export…");
+    try {
+      const res = await fetch(`/api/clips/${clipId}/export`, { method: "POST" });
+      if (res.ok) {
+        toast.success("Export started — we'll update when it's ready", { id: toastId });
+        setClips(
+          (prev) => prev?.map((c) => (c.id === clipId ? { ...c, status: "exporting" } : c)) ?? null
+        );
+      } else {
+        toast.error("Failed to start export", { id: toastId });
+      }
+    } catch {
+      toast.error("Network error — please try again", { id: toastId });
     }
   }
 
   async function handleExportBatch() {
     const clipIds = [...selectedClipIds];
-    const res = await fetch(`/api/projects/${id}/clips/export-batch`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clipIds, withCaptions }),
-    });
-    if (res.ok) {
-      setClips(
-        (prev) =>
-          prev?.map((c) => (selectedClipIds.has(c.id) ? { ...c, status: "exporting" } : c)) ?? null
-      );
+    if (clipIds.length === 0) {
+      toast.warning("Select at least one clip to export");
+      return;
+    }
+    const toastId = toast.loading(
+      `Queuing ${clipIds.length} clip${clipIds.length > 1 ? "s" : ""} for export…`
+    );
+    try {
+      const res = await fetch(`/api/projects/${id}/clips/export-batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clipIds, withCaptions }),
+      });
+      if (res.ok) {
+        toast.success(`${clipIds.length} clip${clipIds.length > 1 ? "s" : ""} queued for export`, {
+          id: toastId,
+        });
+        setClips(
+          (prev) =>
+            prev?.map((c) => (selectedClipIds.has(c.id) ? { ...c, status: "exporting" } : c)) ??
+            null
+        );
+      } else {
+        toast.error("Failed to queue exports", { id: toastId });
+      }
+    } catch {
+      toast.error("Network error — please try again", { id: toastId });
     }
   }
 
@@ -581,7 +634,9 @@ export function ProjectDetailContent({ id }: { id: string }) {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(update),
-          }).catch(() => undefined);
+          }).catch(() => {
+            toast.error("Failed to save clip timing");
+          });
         }
         return prev;
       });
