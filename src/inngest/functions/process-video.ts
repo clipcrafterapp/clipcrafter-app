@@ -128,6 +128,62 @@ export interface ProcessVideoEventData {
   userId: string;
 }
 
+async function runWithExistingTranscript(
+  projectId: string,
+  existingTranscript: { id: string; segments: unknown[] } | null,
+  logger: ReturnType<typeof makeLogger>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  step: any
+): Promise<{ highlightId: string | undefined }> {
+  let highlightId: string | undefined;
+
+  logger.log({ step: "download", provider: "skipped (reused)", status: "ok" });
+  logger.log({ step: "extract-audio", provider: "skipped (reused)", status: "ok" });
+  logger.log({
+    step: "transcribe",
+    provider: "skipped (reused)",
+    detail: `${existingTranscript?.segments?.length ?? 0} segments`,
+    status: "ok",
+  });
+
+  // Jump straight to highlights
+  await step.run("generate-highlights", async () => {
+    await updateProjectStatus(projectId, { status: "generating_highlights" });
+    const existingSegs = Array.isArray(existingTranscript?.segments)
+      ? (existingTranscript.segments as Array<{ start: number; end: number; text: string }>)
+      : [];
+    const highlights = await generateHighlights(
+      formatSegmentsForHighlights(existingSegs),
+      existingSegs
+    );
+    const hlProvider = process.env.HIGHLIGHTS_PROVIDER ?? "gemini";
+    logger.log({
+      step: "generate-highlights",
+      provider: hlProvider,
+      detail: `${highlights.length} highlights`,
+      status: "ok",
+    });
+
+    const { data } = await supabaseAdmin
+      .from("highlights")
+      .insert({ project_id: projectId, segments: highlights })
+      .select()
+      .single();
+    highlightId = (data as { id: string } | null)?.id;
+  });
+
+  await step.run("finalize", async () => {
+    logger.log({ step: "finalize", provider: "system", status: "ok" });
+    await logger.flush();
+    await updateProjectStatus(projectId, {
+      status: "completed",
+      completed_at: new Date().toISOString(),
+    });
+  });
+
+  return { highlightId };
+}
+
 export async function processVideoHandler(
   event: { data: ProcessVideoEventData },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -167,49 +223,13 @@ export async function processVideoHandler(
         .single();
 
       transcriptId = existingTranscript?.id;
-      logger.log({ step: "download", provider: "skipped (reused)", status: "ok" });
-      logger.log({ step: "extract-audio", provider: "skipped (reused)", status: "ok" });
-      logger.log({
-        step: "transcribe",
-        provider: "skipped (reused)",
-        detail: `${existingTranscript?.segments?.length ?? 0} segments`,
-        status: "ok",
-      });
-
-      // Jump straight to highlights
-      await step.run("generate-highlights", async () => {
-        await updateProjectStatus(projectId, { status: "generating_highlights" });
-        const existingSegs = Array.isArray(existingTranscript?.segments)
-          ? (existingTranscript.segments as Array<{ start: number; end: number; text: string }>)
-          : [];
-        const highlights = await generateHighlights(
-          formatSegmentsForHighlights(existingSegs),
-          existingSegs
-        );
-        const hlProvider = process.env.HIGHLIGHTS_PROVIDER ?? "gemini";
-        logger.log({
-          step: "generate-highlights",
-          provider: hlProvider,
-          detail: `${highlights.length} highlights`,
-          status: "ok",
-        });
-
-        const { data } = await supabaseAdmin
-          .from("highlights")
-          .insert({ project_id: projectId, segments: highlights })
-          .select()
-          .single();
-        highlightId = (data as { id: string } | null)?.id;
-      });
-
-      await step.run("finalize", async () => {
-        logger.log({ step: "finalize", provider: "system", status: "ok" });
-        await logger.flush();
-        await updateProjectStatus(projectId, {
-          status: "completed",
-          completed_at: new Date().toISOString(),
-        });
-      });
+      const result = await runWithExistingTranscript(
+        projectId,
+        existingTranscript as { id: string; segments: unknown[] } | null,
+        logger,
+        step
+      );
+      highlightId = result.highlightId;
 
       return {
         projectId,

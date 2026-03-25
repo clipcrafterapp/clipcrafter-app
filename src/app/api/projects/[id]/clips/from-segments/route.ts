@@ -15,6 +15,49 @@ interface SegmentInput {
   topic: string;
 }
 
+interface EnrichedItem {
+  score: number;
+  score_reason: string;
+  reason: string;
+  hashtags: string[];
+  clip_title: string;
+}
+
+function getEnrichValues(enrich: EnrichedItem | undefined) {
+  return {
+    clipTitle: enrich?.clip_title || null,
+    score: enrich?.score ?? 50,
+    scoreReason: enrich?.score_reason ?? null,
+    hashtags: enrich?.hashtags ?? [],
+  };
+}
+
+function buildClipInsertRow(seg: SegmentInput, enrich: EnrichedItem | undefined, pid: string) {
+  const { clipTitle, score, scoreReason, hashtags } = getEnrichValues(enrich);
+  return {
+    project_id: pid,
+    title: clipTitle || seg.text.slice(0, 60),
+    start_sec: seg.start,
+    end_sec: seg.end,
+    score,
+    score_reason: scoreReason,
+    hashtags,
+    clip_title: clipTitle,
+    topic: seg.topic || null,
+    status: "pending",
+    caption_style: "hormozi",
+    aspect_ratio: "9:16",
+  };
+}
+
+function formatClipTimestamp(seconds: number): string {
+  return `${Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0")}:${Math.floor(seconds % 60)
+    .toString()
+    .padStart(2, "0")}`;
+}
+
 const ENRICH_PROMPT = (clips: SegmentInput[]) =>
   `
 You are a social media content strategist.
@@ -33,18 +76,26 @@ Clips:
 ${clips
   .map(
     (c, i) =>
-      `${i + 1}. [${Math.floor(c.start / 60)
-        .toString()
-        .padStart(2, "0")}:${Math.floor(c.start % 60)
-        .toString()
-        .padStart(2, "0")} → ${Math.floor(c.end / 60)
-        .toString()
-        .padStart(2, "0")}:${Math.floor(c.end % 60)
-        .toString()
-        .padStart(2, "0")}] Topic: ${c.topic}\n   ${c.text}`
+      `${i + 1}. [${formatClipTimestamp(c.start)} → ${formatClipTimestamp(c.end)}] Topic: ${c.topic}\n   ${c.text}`
   )
   .join("\n\n")}
 `.trim();
+
+async function validateProjectAccess(
+  projectId: string,
+  supabaseUserId: string
+): Promise<{ error: Response | null }> {
+  const { data: project, error: projectError } = await supabaseAdmin
+    .from("projects")
+    .select("id, user_id")
+    .eq("id", projectId)
+    .single();
+  if (projectError || !project)
+    return { error: Response.json({ error: "Project not found" }, { status: 404 }) };
+  if (project.user_id !== supabaseUserId)
+    return { error: Response.json({ error: "Forbidden" }, { status: 403 }) };
+  return { error: null };
+}
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth();
@@ -55,16 +106,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const supabaseUserId = await getSupabaseUserId(userId);
   if (!supabaseUserId) return Response.json({ error: "Failed to resolve user" }, { status: 500 });
 
-  const { data: project, error: projectError } = await supabaseAdmin
-    .from("projects")
-    .select("id, user_id")
-    .eq("id", projectId)
-    .single();
-
-  if (projectError || !project)
-    return Response.json({ error: "Project not found" }, { status: 404 });
-  if (project.user_id !== supabaseUserId)
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+  const { error: accessError } = await validateProjectAccess(projectId, supabaseUserId);
+  if (accessError) return accessError;
 
   let body: { segments?: SegmentInput[] };
   try {
@@ -79,13 +122,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   // Enrich with LLM
-  let enriched: Array<{
-    score: number;
-    score_reason: string;
-    reason: string;
-    hashtags: string[];
-    clip_title: string;
-  }>;
+  let enriched: EnrichedItem[];
   try {
     const raw = await callLLM(ENRICH_PROMPT(segments));
     enriched = parseLLMJson(raw);
@@ -99,20 +136,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }));
   }
 
-  const insertPayload = segments.map((seg, i) => ({
-    project_id: projectId,
-    title: enriched[i]?.clip_title || seg.text.slice(0, 60),
-    start_sec: seg.start,
-    end_sec: seg.end,
-    score: enriched[i]?.score ?? 50,
-    score_reason: enriched[i]?.score_reason ?? null,
-    hashtags: enriched[i]?.hashtags ?? [],
-    clip_title: enriched[i]?.clip_title || null,
-    topic: seg.topic || null,
-    status: "pending",
-    caption_style: "hormozi",
-    aspect_ratio: "9:16",
-  }));
+  const insertPayload = segments.map((seg, i) => buildClipInsertRow(seg, enriched[i], projectId));
 
   // Upsert by (project_id, start_sec) to avoid dupes
   const { data: clips, error: insertError } = await supabaseAdmin

@@ -113,29 +113,39 @@ Rules:
  * This ensures list view and graph view show the SAME clips with the same timestamps.
  * Edges are inferred by time order within each topic.
  */
-export function buildGraphFromClips(
-  clips: Array<{
-    start: number;
-    end: number;
-    text: string;
-    topic?: string;
-    clip_title?: string;
-    score?: number;
-    reason?: string;
-  }>
-): VideoGraph {
-  // Group by topic
-  const topicGroups = new Map<string, typeof clips>();
+type ClipInput = {
+  start: number;
+  end: number;
+  text: string;
+  topic?: string;
+  clip_title?: string;
+  score?: number;
+  reason?: string;
+};
+
+function groupClipsByTopic(clips: ClipInput[]): Map<string, ClipInput[]> {
+  const groups = new Map<string, ClipInput[]>();
   for (const clip of clips) {
     const t = clip.topic ?? "General";
-    if (!topicGroups.has(t)) topicGroups.set(t, []);
-    topicGroups.get(t)!.push(clip);
+    if (!groups.has(t)) groups.set(t, []);
+    groups.get(t)!.push(clip);
   }
+  return groups;
+}
 
+function buildLogicalFlowEdges(segIds: string[]): GraphEdge[] {
+  const edges: GraphEdge[] = [];
+  for (let i = 0; i < segIds.length - 1; i++) {
+    edges.push({ source: segIds[i], target: segIds[i + 1], relationshipType: "logical-flow" });
+  }
+  return edges;
+}
+
+export function buildGraphFromClips(clips: ClipInput[]): VideoGraph {
+  const topicGroups = groupClipsByTopic(clips);
   const nodes: GraphNode[] = [];
   const segments: GraphSegment[] = [];
   const edges: GraphEdge[] = [];
-
   let nodeIdx = 0;
   let segIdx = 0;
 
@@ -150,7 +160,6 @@ export function buildGraphFromClips(
       ),
       speakerId: null,
     });
-
     const segIds: string[] = [];
     for (const clip of topicClips.sort((a, b) => a.start - b.start)) {
       const segId = `s${segIdx++}`;
@@ -164,15 +173,7 @@ export function buildGraphFromClips(
         intensityScore: clip.score ?? 50,
       });
     }
-
-    // Infer logical-flow edges between consecutive clips in same topic
-    for (let i = 0; i < segIds.length - 1; i++) {
-      edges.push({
-        source: segIds[i],
-        target: segIds[i + 1],
-        relationshipType: "logical-flow",
-      });
-    }
+    edges.push(...buildLogicalFlowEdges(segIds));
   }
 
   return { nodes, segments, edges };
@@ -189,7 +190,7 @@ export async function buildVideoGraph(
   formattedTranscript: string,
   _rawSegments?: TranscriptSegmentInput[]
 ): Promise<VideoGraph> {
-  console.log("[video-graph] Building semantic graph...");
+  console.warn("[video-graph] Building semantic graph...");
   const raw = await callLLM(VIDEO_GRAPH_PROMPT(formattedTranscript), {
     temperature: 0.2,
     systemPrompt: "You are a Narrative Designer. Output only valid JSON.",
@@ -232,7 +233,7 @@ export async function buildVideoGraph(
     edges: parsed.edges ?? [],
   };
 
-  console.log(
+  console.warn(
     `[video-graph] ${graph.nodes.length} topics, ${graph.segments.length} segments, ${graph.edges.length} edges`
   );
   return graph;
