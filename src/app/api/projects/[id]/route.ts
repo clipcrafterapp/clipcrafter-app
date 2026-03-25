@@ -6,7 +6,11 @@ import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { r2Client, R2_BUCKET } from "@/lib/r2";
 import { getSupabaseUserId } from "@/lib/user";
-import { DeleteObjectCommand } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
+  ListObjectsV2Command,
+} from "@aws-sdk/client-s3";
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth();
@@ -34,6 +38,21 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
 
   await Promise.allSettled(
     r2Keys.map((key) => r2Client.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key })))
+  );
+
+  // Delete all exports and temp YouTube sources for this project (best effort)
+  const prefixesToDelete = [`exports/${id}/`, `temp-sources/${id}/`];
+  await Promise.allSettled(
+    prefixesToDelete.map(async (prefix) => {
+      const listed = await r2Client.send(
+        new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: prefix })
+      );
+      const objects = listed.Contents?.map((o) => ({ Key: o.Key! })) ?? [];
+      if (objects.length === 0) return;
+      await r2Client.send(
+        new DeleteObjectsCommand({ Bucket: R2_BUCKET, Delete: { Objects: objects } })
+      );
+    })
   );
 
   // Delete from Supabase (cascades to transcripts + highlights via FK)
