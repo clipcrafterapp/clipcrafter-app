@@ -17,6 +17,14 @@ vi.mock("@/inngest/functions/process-video", () => ({
   processVideo: { id: "process-video" },
 }));
 
+vi.mock("@/inngest/functions/clip-export", () => ({
+  clipExport: { id: "clip-export" },
+}));
+
+vi.mock("@/inngest/functions/generate-clips", () => ({
+  generateClips: { id: "generate-clips" },
+}));
+
 Feature("Inngest Serve Route", () => {
   Scenario("route exports GET, POST, PUT handlers", () => {
     it("Given the inngest route module, Then it exports GET POST and PUT", async () => {
