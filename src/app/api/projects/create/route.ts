@@ -2,6 +2,17 @@ import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getSupabaseUserId } from "@/lib/user";
 
+/**
+ * Normalize a YouTube URL to a canonical video ID form: https://www.youtube.com/watch?v=ID
+ * This ensures youtu.be/ID, youtube.com/live/ID, /shorts/, and full watch URLs all
+ * map to the same stored key for deduplication purposes.
+ */
+function normalizeYouTubeUrl(url: string): string {
+  const match = url.match(/(?:v=|youtu\.be\/|\/live\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+  if (match) return `https://www.youtube.com/watch?v=${match[1]}`;
+  return url; // fallback: store as-is
+}
+
 export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) {
@@ -36,39 +47,42 @@ export async function POST(request: Request) {
     return Response.json({ error: "Failed to resolve user" }, { status: 500 });
   }
 
-  // ── YouTube dedup: if a completed project exists for this URL, reuse its audio + transcript ──
-  // A new project is still created (so highlights can differ), but we copy the existing
-  // audio_key and transcript so we skip re-downloading and re-transcribing.
-  let clonedAudioKey: string | null = null;
-  let clonedTranscriptId: string | null = null;
+  const normalizedYouTubeUrl =
+    type === "youtube" && youtubeUrl ? normalizeYouTubeUrl(youtubeUrl.trim()) : undefined;
 
-  if (type === "youtube" && youtubeUrl) {
-    const normalizedUrl = youtubeUrl.trim();
-    const { data: existing } = await supabaseAdmin
+  // ── YouTube asset reuse ──
+  // If the user already has a *completed* project for this URL, reuse its audio + transcript.
+  // A new project is always created (user may want different clip selections), but we skip
+  // re-downloading and re-transcribing by copying the existing audio_key + transcript segments
+  // and setting status="transcribed" so the Inngest job jumps straight to highlight generation.
+  let reusedAudioKey: string | null = null;
+  let reusedTranscriptSegments: unknown | null = null;
+
+  if (normalizedYouTubeUrl) {
+    const { data: source } = await supabaseAdmin
       .from("projects")
       .select("id, audio_key")
-      .eq("r2_key", normalizedUrl)
-      .eq("status", "completed") // only reuse fully completed projects
+      .eq("user_id", supabaseUserId)
+      .eq("r2_key", normalizedYouTubeUrl)
+      .eq("status", "completed")
       .order("created_at", { ascending: false })
       .limit(1)
       .single();
 
-    if (existing?.audio_key) {
-      clonedAudioKey = existing.audio_key;
-      // Fetch the transcript too
+    if (source?.audio_key) {
+      reusedAudioKey = source.audio_key;
       const { data: transcript } = await supabaseAdmin
         .from("transcripts")
-        .select("id")
-        .eq("project_id", existing.id)
+        .select("segments")
+        .eq("project_id", source.id)
         .order("created_at", { ascending: false })
         .limit(1)
         .single();
-      if (transcript) clonedTranscriptId = transcript.id;
+      if (transcript) reusedTranscriptSegments = transcript.segments;
     }
   }
 
-  // If we have a cloned audio+transcript, skip straight to "transcribed" status
-  const initialStatus = clonedTranscriptId ? "transcribed" : "pending";
+  const initialStatus = reusedTranscriptSegments ? "transcribed" : "pending";
 
   const { data, error } = await supabaseAdmin
     .from("projects")
@@ -77,8 +91,8 @@ export async function POST(request: Request) {
       title: title.trim(),
       type,
       status: initialStatus,
-      ...(type === "youtube" && youtubeUrl ? { r2_key: youtubeUrl.trim() } : {}),
-      ...(clonedAudioKey ? { audio_key: clonedAudioKey } : {}),
+      ...(normalizedYouTubeUrl ? { r2_key: normalizedYouTubeUrl } : {}),
+      ...(reusedAudioKey ? { audio_key: reusedAudioKey } : {}),
     })
     .select()
     .single();
@@ -87,19 +101,12 @@ export async function POST(request: Request) {
     return Response.json({ error: error.message }, { status: 500 });
   }
 
-  // If we cloned a transcript, copy its segments to the new project
-  if (clonedTranscriptId && data) {
-    const { data: srcTranscript } = await supabaseAdmin
-      .from("transcripts")
-      .select("segments")
-      .eq("id", clonedTranscriptId)
-      .single();
-    if (srcTranscript) {
-      await supabaseAdmin.from("transcripts").insert({
-        project_id: data.id,
-        segments: srcTranscript.segments,
-      });
-    }
+  // Copy transcript segments to the new project so the Inngest job can skip transcription
+  if (reusedTranscriptSegments && data) {
+    await supabaseAdmin.from("transcripts").insert({
+      project_id: data.id,
+      segments: reusedTranscriptSegments,
+    });
   }
 
   return Response.json(
@@ -108,7 +115,7 @@ export async function POST(request: Request) {
       title: data.title,
       status: data.status,
       created_at: data.created_at,
-      reused_transcript: !!clonedTranscriptId,
+      reused_assets: !!reusedTranscriptSegments,
     },
     { status: 201 }
   );

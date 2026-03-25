@@ -130,14 +130,7 @@ export default function UploadModal({ open, onClose }: UploadModalProps) {
       });
       if (!createRes.ok) throw new Error("Failed to create project");
       const createData = await createRes.json();
-      const { id, deduplicated } = createData;
-
-      // If this YouTube URL already has a project, go straight to it
-      if (deduplicated) {
-        setStep("done");
-        router.push(`/dashboard/projects/${id}`);
-        return;
-      }
+      const { id } = createData;
 
       setStep("processing");
       const processRes = await fetch(`/api/projects/${id}/process`, {
