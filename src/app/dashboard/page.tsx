@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { UserButton } from "@clerk/nextjs";
+import { toast } from "sonner";
 import ProjectCard, { type Project } from "@/components/ProjectCard";
 import UploadModal from "@/components/UploadModal";
 
@@ -32,9 +33,17 @@ export default function DashboardPage() {
   }
 
   async function handleDelete(id: string) {
-    const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
-    if (res.ok) {
-      setProjects((prev) => prev.filter((p) => p.id !== id));
+    const toastId = toast.loading("Deleting project…");
+    try {
+      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Project deleted", { id: toastId });
+        setProjects((prev) => prev.filter((p) => p.id !== id));
+      } else {
+        toast.error("Failed to delete project", { id: toastId });
+      }
+    } catch {
+      toast.error("Network error — please try again", { id: toastId });
     }
   }
 
