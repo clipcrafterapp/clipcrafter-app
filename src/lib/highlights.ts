@@ -74,7 +74,7 @@ export function thinTranscript(formatted: string, maxChars = 15_000): string {
   for (let step = 2; step <= 6; step++) {
     const thinned = lines.filter((_, i) => i % step === 0).join("\n");
     if (thinned.length <= maxChars) {
-      console.log(
+      console.warn(
         `[highlights] transcript thinned (1 of every ${step} segments, ${thinned.length} chars)`
       );
       return thinned;
@@ -131,7 +131,7 @@ export async function buildTopicMap(
   formattedTranscript: string,
   _rawSegments: TranscriptSegmentInput[]
 ): Promise<TopicMap[]> {
-  console.log("Building topic map (one-pass)...");
+  console.warn("Building topic map (one-pass)...");
   const raw = await callLLM(TOPIC_MAP_PROMPT(formattedTranscript));
 
   let parsed: Array<{
@@ -168,6 +168,26 @@ export async function buildTopicMap(
 }
 
 // ─── Convert TopicMap → Highlights (with enrichment) ─────────────────────────
+
+type EnrichedMeta = {
+  score: number;
+  score_reason: string;
+  reason: string;
+  hashtags: string[];
+  clip_title: string;
+};
+
+const DEFAULT_ENRICH: EnrichedMeta = {
+  score: 50,
+  score_reason: "",
+  reason: "",
+  hashtags: [],
+  clip_title: "",
+};
+
+function applyEnrichment(meta: EnrichedMeta | undefined): EnrichedMeta {
+  return { ...DEFAULT_ENRICH, ...meta };
+}
 
 const ENRICH_PROMPT = (clips: Array<{ start: number; end: number; text: string; topic: string }>) =>
   `
@@ -222,7 +242,7 @@ export async function generateAutoHighlights(
   rawSegments: TranscriptSegmentInput[]
 ): Promise<Highlight[]> {
   const topicMap = await buildTopicMap(formattedTranscript, rawSegments);
-  console.log(`Topic map built: ${topicMap.length} topics`);
+  console.warn(`Topic map built: ${topicMap.length} topics`);
 
   if (topicMap.length === 0) {
     console.warn("Empty topic map, falling back to 5-clip manual mode");
@@ -251,14 +271,7 @@ export async function generateAutoHighlights(
     }));
   }
 
-  return clips.map((c, i) => ({
-    ...c,
-    reason: enriched[i]?.reason ?? "",
-    score: enriched[i]?.score ?? 50,
-    score_reason: enriched[i]?.score_reason ?? "",
-    hashtags: enriched[i]?.hashtags ?? [],
-    clip_title: enriched[i]?.clip_title ?? "",
-  }));
+  return clips.map((c, i) => ({ ...c, ...applyEnrichment(enriched[i]) }));
 }
 
 // ─── Manual mode: N clips ─────────────────────────────────────────────────────
@@ -350,14 +363,7 @@ export async function generateHighlights(
     }));
   }
 
-  return segmentsWithText.map((seg, i) => ({
-    ...seg,
-    reason: enriched[i]?.reason ?? "",
-    score: enriched[i]?.score ?? 50,
-    score_reason: enriched[i]?.score_reason ?? "",
-    hashtags: enriched[i]?.hashtags ?? [],
-    clip_title: enriched[i]?.clip_title ?? "",
-  }));
+  return segmentsWithText.map((seg, i) => ({ ...seg, ...applyEnrichment(enriched[i]) }));
 }
 
 // ─── Post-save enrichment ─────────────────────────────────────────────────────
@@ -409,5 +415,5 @@ export async function enrichClipsForProject(
     )
   );
 
-  console.log(`[highlights] enriched ${clips.length} clips for project ${projectId}`);
+  console.warn(`[highlights] enriched ${clips.length} clips for project ${projectId}`);
 }

@@ -2,6 +2,32 @@ import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getSupabaseUserId } from "@/lib/user";
 
+async function fetchTranscriptAndHighlights(id: string): Promise<{
+  transcript: { id: string; segments: unknown[] } | null;
+  highlights: { id: string; segments: unknown[] } | null;
+}> {
+  const [tResult, hResult] = await Promise.all([
+    supabaseAdmin
+      .from("transcripts")
+      .select("id, segments")
+      .eq("project_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single(),
+    supabaseAdmin
+      .from("highlights")
+      .select("id, segments")
+      .eq("project_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single(),
+  ]);
+  return {
+    transcript: tResult.data ?? null,
+    highlights: hResult.data ?? null,
+  };
+}
+
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth();
   if (!userId) {
@@ -28,30 +54,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // Include transcript + highlights when completed
-  let transcript = null;
-  let highlights = null;
-
-  if (project.status === "completed") {
-    const [tResult, hResult] = await Promise.all([
-      supabaseAdmin
-        .from("transcripts")
-        .select("id, segments")
-        .eq("project_id", id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single(),
-      supabaseAdmin
-        .from("highlights")
-        .select("id, segments")
-        .eq("project_id", id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single(),
-    ]);
-    if (tResult.data) transcript = tResult.data;
-    if (hResult.data) highlights = hResult.data;
-  }
+  const { transcript, highlights } =
+    project.status === "completed"
+      ? await fetchTranscriptAndHighlights(id)
+      : { transcript: null, highlights: null };
 
   return Response.json(
     {

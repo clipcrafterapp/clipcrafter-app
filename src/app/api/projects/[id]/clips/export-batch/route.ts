@@ -6,6 +6,16 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getSupabaseUserId } from "@/lib/user";
 import { inngest } from "@/lib/inngest";
 
+function validateExportBatchBody(body: {
+  clipIds?: unknown;
+  withCaptions?: unknown;
+}): string | null {
+  if (!Array.isArray(body.clipIds) || body.clipIds.length === 0) {
+    return "clipIds must be a non-empty array";
+  }
+  return null;
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth();
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -17,9 +27,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const body = (await request.json()) as { clipIds?: unknown; withCaptions?: unknown };
   const { clipIds, withCaptions } = body;
 
-  if (!Array.isArray(clipIds) || clipIds.length === 0) {
-    return Response.json({ error: "clipIds must be a non-empty array" }, { status: 400 });
-  }
+  const validationError = validateExportBatchBody(body);
+  if (validationError) return Response.json({ error: validationError }, { status: 400 });
 
   // Verify project ownership
   const { data: project, error: projError } = await supabaseAdmin

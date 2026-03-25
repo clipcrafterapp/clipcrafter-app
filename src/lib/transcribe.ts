@@ -23,144 +23,9 @@ export interface TranscriptResult {
   provider?: string;
 }
 
-const SARVAM_API_KEY = process.env.SARVAM_API_KEY ?? "";
-const SARVAM_BASE = "https://api.sarvam.ai";
+type SarvamJsonHeaders = { "api-subscription-key": string; "Content-Type": string };
 
-export async function transcribeAudio(audioPath: string): Promise<TranscriptResult> {
-  if (!SARVAM_API_KEY) throw new Error("SARVAM_API_KEY is not set");
-  const result = await transcribeWithSarvam(audioPath);
-  return { ...result, provider: "Sarvam Saaras v3 (diarization)" };
-}
-
-async function transcribeWithSarvam(audioPath: string): Promise<TranscriptResult> {
-  const jsonHeaders = {
-    "api-subscription-key": SARVAM_API_KEY,
-    "Content-Type": "application/json",
-  };
-
-  // Step 1 — Create batch job
-  console.log("Sarvam: creating batch job (Saaras v3 + diarization)...");
-  const initRes = await fetch(`${SARVAM_BASE}/speech-to-text/job/v1`, {
-    method: "POST",
-    headers: jsonHeaders,
-    body: JSON.stringify({
-      job_parameters: {
-        model: "saaras:v3",
-        mode: "transcribe",
-        language_code: "unknown",
-        with_diarization: true,
-        with_timestamps: true,
-      },
-    }),
-  });
-  if (!initRes.ok)
-    throw new Error(`Sarvam job init failed (${initRes.status}): ${await initRes.text()}`);
-  const { job_id } = (await initRes.json()) as { job_id: string };
-  console.log(`Sarvam: job created → ${job_id}`);
-
-  // Step 2 — Get presigned upload URL
-  const uploadLinksRes = await fetch(`${SARVAM_BASE}/speech-to-text/job/v1/upload-files`, {
-    method: "POST",
-    headers: jsonHeaders,
-    body: JSON.stringify({ job_id, files: ["audio.mp3"] }),
-  });
-  if (!uploadLinksRes.ok)
-    throw new Error(
-      `Sarvam upload-files failed (${uploadLinksRes.status}): ${await uploadLinksRes.text()}`
-    );
-
-  const uploadData = (await uploadLinksRes.json()) as {
-    upload_urls: Record<string, { file_url: string }>;
-  };
-  const uploadUrl = uploadData.upload_urls?.["audio.mp3"]?.file_url;
-  if (!uploadUrl) throw new Error("Sarvam: no upload URL returned");
-
-  // Step 3 — Upload file via presigned PUT (Azure requires x-ms-blob-type header)
-  const fileBuffer = fs.readFileSync(audioPath);
-  const putRes = await fetch(uploadUrl, {
-    method: "PUT",
-    body: fileBuffer,
-    headers: {
-      "Content-Type": "audio/mpeg",
-      "x-ms-blob-type": "BlockBlob", // required for Azure Blob Storage
-    },
-  });
-  if (!putRes.ok)
-    throw new Error(`Sarvam file upload failed (${putRes.status}): ${await putRes.text()}`);
-  console.log(`Sarvam: uploaded ${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB`);
-
-  // Step 4 — Start the job
-  const startRes = await fetch(`${SARVAM_BASE}/speech-to-text/job/v1/${job_id}/start`, {
-    method: "POST",
-    headers: { "api-subscription-key": SARVAM_API_KEY },
-  });
-  if (!startRes.ok)
-    throw new Error(`Sarvam job start failed (${startRes.status}): ${await startRes.text()}`);
-  console.log("Sarvam: job started, polling...");
-
-  // Step 5 — Poll for completion (correct endpoint: /status)
-  const startTime = Date.now();
-  let outputFileName = "0.json"; // default, overridden from job_details
-
-  while (Date.now() - startTime < 10 * 60 * 1000) {
-    await sleep(5000);
-    const statusRes = await fetch(`${SARVAM_BASE}/speech-to-text/job/v1/${job_id}/status`, {
-      headers: { "api-subscription-key": SARVAM_API_KEY },
-    });
-    if (!statusRes.ok) continue;
-
-    const status = (await statusRes.json()) as {
-      job_state: string;
-      error_message?: string;
-      job_details?: Array<{
-        outputs?: Array<{ file_name: string; file_id: string }>;
-        state?: string;
-        error_message?: string;
-      }>;
-    };
-
-    console.log(`Sarvam: job state → ${status.job_state}`);
-
-    if (status.job_state === "Completed") {
-      // Extract output filename from job_details
-      const outputFile = status.job_details?.[0]?.outputs?.[0]?.file_name;
-      if (outputFile) outputFileName = outputFile;
-      break;
-    }
-    if (status.job_state === "Failed") {
-      const detail = status.job_details?.[0]?.error_message;
-      throw new Error(`Sarvam job failed: ${detail ?? status.error_message ?? "unknown"}`);
-    }
-  }
-
-  // Step 6 — Get presigned download URL
-  const downloadLinksRes = await fetch(`${SARVAM_BASE}/speech-to-text/job/v1/download-files`, {
-    method: "POST",
-    headers: jsonHeaders,
-    body: JSON.stringify({ job_id, files: [outputFileName] }),
-  });
-  if (!downloadLinksRes.ok)
-    throw new Error(
-      `Sarvam download-files failed (${downloadLinksRes.status}): ${await downloadLinksRes.text()}`
-    );
-
-  const downloadData = (await downloadLinksRes.json()) as {
-    download_urls: Record<string, { file_url: string }>;
-  };
-  const downloadUrl = downloadData.download_urls?.[outputFileName]?.file_url;
-  if (!downloadUrl) throw new Error(`Sarvam: no download URL for ${outputFileName}`);
-
-  // Step 7 — Fetch transcript JSON
-  const transcriptRes = await fetch(downloadUrl);
-  if (!transcriptRes.ok)
-    throw new Error(`Sarvam transcript fetch failed (${transcriptRes.status})`);
-  const output = await transcriptRes.json();
-
-  console.log(`Sarvam: transcript received, parsing...`);
-  return parseSarvamOutput(output);
-}
-
-function parseSarvamOutput(output: {
+type SarvamOutput = {
   transcript?: string;
   diarized_transcript?: {
     entries: Array<{
@@ -175,37 +40,194 @@ function parseSarvamOutput(output: {
     start_time_seconds: number[];
     end_time_seconds: number[];
   };
-}): TranscriptResult {
-  const diarized = output.diarized_transcript?.entries ?? [];
+};
 
-  if (diarized.length > 0) {
-    const segments = diarized.map((entry, i) => ({
-      id: i,
-      start: entry.start_time_seconds,
-      end: entry.end_time_seconds,
-      text: `[Speaker ${entry.speaker_id}] ${entry.transcript}`,
-    }));
-    return {
-      text: diarized.map((e) => `[Speaker ${e.speaker_id}] ${e.transcript}`).join(" "),
-      segments,
-    };
+const SARVAM_API_KEY = process.env.SARVAM_API_KEY ?? "";
+const SARVAM_BASE = "https://api.sarvam.ai";
+
+export async function transcribeAudio(audioPath: string): Promise<TranscriptResult> {
+  if (!SARVAM_API_KEY) throw new Error("SARVAM_API_KEY is not set");
+  const result = await transcribeWithSarvam(audioPath);
+  return { ...result, provider: "Sarvam Saaras v3 (diarization)" };
+}
+
+async function createSarvamJob(jsonHeaders: SarvamJsonHeaders): Promise<string> {
+  console.warn("Sarvam: creating batch job (Saaras v3 + diarization)...");
+  const res = await fetch(`${SARVAM_BASE}/speech-to-text/job/v1`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify({
+      job_parameters: {
+        model: "saaras:v3",
+        mode: "transcribe",
+        language_code: "unknown",
+        with_diarization: true,
+        with_timestamps: true,
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`Sarvam job init failed (${res.status}): ${await res.text()}`);
+  const { job_id } = (await res.json()) as { job_id: string };
+  console.warn(`Sarvam: job created → ${job_id}`);
+  return job_id;
+}
+
+async function uploadAudioToSarvam(
+  job_id: string,
+  audioPath: string,
+  jsonHeaders: SarvamJsonHeaders
+): Promise<void> {
+  const uploadLinksRes = await fetch(`${SARVAM_BASE}/speech-to-text/job/v1/upload-files`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify({ job_id, files: ["audio.mp3"] }),
+  });
+  if (!uploadLinksRes.ok)
+    throw new Error(
+      `Sarvam upload-files failed (${uploadLinksRes.status}): ${await uploadLinksRes.text()}`
+    );
+  const uploadData = (await uploadLinksRes.json()) as {
+    upload_urls: Record<string, { file_url: string }>;
+  };
+  const uploadUrl = uploadData.upload_urls?.["audio.mp3"]?.file_url;
+  if (!uploadUrl) throw new Error("Sarvam: no upload URL returned");
+
+  const fileBuffer = fs.readFileSync(audioPath);
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    body: fileBuffer,
+    headers: { "Content-Type": "audio/mpeg", "x-ms-blob-type": "BlockBlob" },
+  });
+  if (!putRes.ok)
+    throw new Error(`Sarvam file upload failed (${putRes.status}): ${await putRes.text()}`);
+  console.warn(`Sarvam: uploaded ${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB`);
+}
+
+async function startSarvamJob(job_id: string): Promise<void> {
+  const startRes = await fetch(`${SARVAM_BASE}/speech-to-text/job/v1/${job_id}/start`, {
+    method: "POST",
+    headers: { "api-subscription-key": SARVAM_API_KEY },
+  });
+  if (!startRes.ok)
+    throw new Error(`Sarvam job start failed (${startRes.status}): ${await startRes.text()}`);
+  console.warn("Sarvam: job started, polling...");
+}
+
+type SarvamJobStatus = {
+  job_state: string;
+  error_message?: string;
+  job_details?: Array<{
+    outputs?: Array<{ file_name: string; file_id: string }>;
+    state?: string;
+    error_message?: string;
+  }>;
+};
+
+function extractOutputFileName(status: SarvamJobStatus): string {
+  return status.job_details?.[0]?.outputs?.[0]?.file_name ?? "0.json";
+}
+
+function assertJobNotFailed(status: SarvamJobStatus): void {
+  if (status.job_state !== "Failed") return;
+  const detail = status.job_details?.[0]?.error_message;
+  throw new Error(`Sarvam job failed: ${detail ?? status.error_message ?? "unknown"}`);
+}
+
+async function pollSarvamJob(job_id: string): Promise<string> {
+  const startTime = Date.now();
+  let outputFileName = "0.json";
+
+  while (Date.now() - startTime < 10 * 60 * 1000) {
+    await sleep(5000);
+    const statusRes = await fetch(`${SARVAM_BASE}/speech-to-text/job/v1/${job_id}/status`, {
+      headers: { "api-subscription-key": SARVAM_API_KEY },
+    });
+    if (!statusRes.ok) continue;
+
+    const status = (await statusRes.json()) as SarvamJobStatus;
+    console.warn(`Sarvam: job state → ${status.job_state}`);
+    assertJobNotFailed(status);
+
+    if (status.job_state === "Completed") {
+      outputFileName = extractOutputFileName(status);
+      break;
+    }
   }
+  return outputFileName;
+}
 
-  // Fallback: no diarization — use word timestamps grouped into segments
+async function downloadSarvamOutput(
+  job_id: string,
+  outputFileName: string,
+  jsonHeaders: SarvamJsonHeaders
+): Promise<SarvamOutput> {
+  const downloadLinksRes = await fetch(`${SARVAM_BASE}/speech-to-text/job/v1/download-files`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify({ job_id, files: [outputFileName] }),
+  });
+  if (!downloadLinksRes.ok)
+    throw new Error(
+      `Sarvam download-files failed (${downloadLinksRes.status}): ${await downloadLinksRes.text()}`
+    );
+  const downloadData = (await downloadLinksRes.json()) as {
+    download_urls: Record<string, { file_url: string }>;
+  };
+  const downloadUrl = downloadData.download_urls?.[outputFileName]?.file_url;
+  if (!downloadUrl) throw new Error(`Sarvam: no download URL for ${outputFileName}`);
+
+  const transcriptRes = await fetch(downloadUrl);
+  if (!transcriptRes.ok)
+    throw new Error(`Sarvam transcript fetch failed (${transcriptRes.status})`);
+  console.warn(`Sarvam: transcript received, parsing...`);
+  return transcriptRes.json() as Promise<SarvamOutput>;
+}
+
+async function transcribeWithSarvam(audioPath: string): Promise<TranscriptResult> {
+  const jsonHeaders: SarvamJsonHeaders = {
+    "api-subscription-key": SARVAM_API_KEY,
+    "Content-Type": "application/json",
+  };
+  const job_id = await createSarvamJob(jsonHeaders);
+  await uploadAudioToSarvam(job_id, audioPath, jsonHeaders);
+  await startSarvamJob(job_id);
+  const outputFileName = await pollSarvamJob(job_id);
+  const output = await downloadSarvamOutput(job_id, outputFileName, jsonHeaders);
+  return parseSarvamOutput(output);
+}
+
+function buildDiarizedResult(output: SarvamOutput): TranscriptResult | null {
+  const diarized = output.diarized_transcript?.entries ?? [];
+  if (diarized.length === 0) return null;
+  const segments = diarized.map((entry, i) => ({
+    id: i,
+    start: entry.start_time_seconds,
+    end: entry.end_time_seconds,
+    text: `[Speaker ${entry.speaker_id}] ${entry.transcript}`,
+  }));
+  return {
+    text: diarized.map((e) => `[Speaker ${e.speaker_id}] ${e.transcript}`).join(" "),
+    segments,
+  };
+}
+
+function buildTimestampResult(output: SarvamOutput): TranscriptResult | null {
   const words = output.timestamps?.words ?? [];
+  if (words.length === 0) return null;
   const starts = output.timestamps?.start_time_seconds ?? [];
   const ends = output.timestamps?.end_time_seconds ?? [];
+  const wordObjs = words.map((w, i) => ({ word: w, start: starts[i] ?? 0, end: ends[i] ?? 0 }));
+  return { text: output.transcript ?? words.join(" "), segments: groupWordsIntoSegments(wordObjs) };
+}
 
-  if (words.length > 0) {
-    const wordObjs = words.map((w, i) => ({ word: w, start: starts[i] ?? 0, end: ends[i] ?? 0 }));
-    const segments = groupWordsIntoSegments(wordObjs);
-    return { text: output.transcript ?? words.join(" "), segments };
-  }
-
-  return {
-    text: output.transcript ?? "",
-    segments: output.transcript ? [{ id: 0, start: 0, end: 0, text: output.transcript }] : [],
-  };
+function parseSarvamOutput(output: SarvamOutput): TranscriptResult {
+  return (
+    buildDiarizedResult(output) ??
+    buildTimestampResult(output) ?? {
+      text: output.transcript ?? "",
+      segments: output.transcript ? [{ id: 0, start: 0, end: 0, text: output.transcript }] : [],
+    }
+  );
 }
 
 function groupWordsIntoSegments(

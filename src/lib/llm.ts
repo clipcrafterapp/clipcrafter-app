@@ -68,14 +68,23 @@ function getConfig() {
   return { provider, model, baseUrl, apiKey };
 }
 
-async function callLLMWithModel(
-  model: string,
-  prompt: string,
-  opts: LLMOptions,
-  baseUrl: string,
-  apiKey: string,
-  provider: string
-): Promise<string> {
+interface ModelCallArgs {
+  model: string;
+  prompt: string;
+  opts: LLMOptions;
+  baseUrl: string;
+  apiKey: string;
+  provider: string;
+}
+
+async function callLLMWithModel({
+  model,
+  prompt,
+  opts,
+  baseUrl,
+  apiKey,
+  provider,
+}: ModelCallArgs): Promise<string> {
   const messages: Array<{ role: string; content: string }> = [];
   if (opts.systemPrompt) messages.push({ role: "system", content: opts.systemPrompt });
   messages.push({ role: "user", content: prompt });
@@ -106,35 +115,45 @@ async function callLLMWithModel(
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error(`LLM returned empty content (${provider}/${model})`);
 
-  console.log(`[llm] ${provider}/${model} → ${content.length} chars`);
+  console.warn(`[llm] ${provider}/${model} → ${content.length} chars`);
   return content;
+}
+
+function isRetryableError(msg: string): boolean {
+  return (
+    msg.includes("404") ||
+    msg.includes("deprecated") ||
+    msg.includes("not found") ||
+    msg.includes("no longer available") ||
+    msg.includes("RESOURCE_EXHAUSTED") ||
+    msg.includes("quota")
+  );
+}
+
+async function tryModelsInOrder(
+  models: string[],
+  prompt: string,
+  opts: LLMOptions,
+  config: { baseUrl: string; apiKey: string; provider: string }
+): Promise<string> {
+  let lastErr: Error | null = null;
+  for (const model of models) {
+    try {
+      return await callLLMWithModel({ model, prompt, opts, ...config });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[llm] ${config.provider}/${model} failed: ${msg.slice(0, 120)}`);
+      lastErr = err instanceof Error ? err : new Error(msg);
+      if (!isRetryableError(msg)) throw lastErr;
+    }
+  }
+  throw lastErr ?? new Error(`All ${config.provider} models failed`);
 }
 
 export async function callLLM(prompt: string, opts: LLMOptions = {}): Promise<string> {
   const { model, baseUrl, apiKey, provider } = getConfig();
-
-  // For Gemini, try fallback chain if configured model fails
   const models = provider === "gemini" ? [...new Set([model, ...GEMINI_MODELS])] : [model];
-
-  let lastErr: Error | null = null;
-  for (const m of models) {
-    try {
-      return await callLLMWithModel(m, prompt, opts, baseUrl, apiKey, provider);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const retryable =
-        msg.includes("404") ||
-        msg.includes("deprecated") ||
-        msg.includes("not found") ||
-        msg.includes("no longer available") ||
-        msg.includes("RESOURCE_EXHAUSTED") ||
-        msg.includes("quota");
-      console.warn(`[llm] ${provider}/${m} failed: ${msg.slice(0, 120)}`);
-      lastErr = err instanceof Error ? err : new Error(msg);
-      if (!retryable) throw lastErr;
-    }
-  }
-  throw lastErr ?? new Error(`All ${provider} models failed`);
+  return tryModelsInOrder(models, prompt, opts, { baseUrl, apiKey, provider });
 }
 
 /** Convenience: parse JSON from LLM output, stripping markdown fences */

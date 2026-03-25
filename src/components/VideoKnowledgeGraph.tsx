@@ -174,6 +174,141 @@ const nodeTypes = {
   segment: SegmentNode,
 };
 
+// ─── Graph element builders ───────────────────────────────────────────────────
+
+const TOPIC_X_STEP = 320;
+const TOPIC_Y = 80;
+const SEG_Y_START = 230;
+const SEG_Y_STEP = 170;
+const START_X = 0;
+const FIRST_TOPIC_X = 140;
+
+function buildGraphNodes(
+  graph: VideoGraph,
+  selectedSegmentIds: Set<string>,
+  onSegmentClick: (segment: GraphSegment) => void,
+  onSegmentSelect: (id: string, selected: boolean) => void
+): Node[] {
+  const topicPositions: Record<string, { x: number; y: number }> = {};
+
+  const startNode: Node = {
+    id: "__start__",
+    type: "start",
+    position: { x: START_X, y: TOPIC_Y + 10 },
+    data: { label: "START" } as StartNodeData,
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+  };
+
+  const topicNodes: Node[] = graph.nodes.map((node, i) => {
+    const x = FIRST_TOPIC_X + i * TOPIC_X_STEP;
+    topicPositions[node.id] = { x, y: TOPIC_Y };
+    return {
+      id: node.id,
+      type: "topic",
+      position: { x, y: TOPIC_Y },
+      data: { node } as TopicNodeData,
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+    };
+  });
+
+  const segsByTopic: Record<string, GraphSegment[]> = {};
+  for (const seg of graph.segments) {
+    if (!segsByTopic[seg.topicId]) segsByTopic[seg.topicId] = [];
+    segsByTopic[seg.topicId].push(seg);
+  }
+
+  const segmentNodes: Node[] = graph.segments.map((segment) => {
+    const parentPos = topicPositions[segment.topicId] ?? { x: 0, y: TOPIC_Y };
+    const siblings = segsByTopic[segment.topicId] ?? [];
+    const idx = siblings.indexOf(segment);
+    return {
+      id: segment.id,
+      type: "segment",
+      position: { x: parentPos.x, y: SEG_Y_START + idx * SEG_Y_STEP },
+      data: {
+        segment,
+        selected: selectedSegmentIds.has(segment.id),
+        onSegmentClick,
+        onSegmentSelect,
+      } as SegmentNodeData,
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+    };
+  });
+
+  return [startNode, ...topicNodes, ...segmentNodes];
+}
+
+function buildGraphEdges(graph: VideoGraph): Edge[] {
+  const arrowMarker = { type: MarkerType.ArrowClosed, width: 14, height: 14 };
+
+  const startEdges: Edge[] =
+    graph.nodes.length > 0
+      ? [
+          {
+            id: "start-to-first",
+            source: "__start__",
+            target: graph.nodes[0].id,
+            markerEnd: { ...arrowMarker, color: "#6b7280" },
+            style: { stroke: "#6b7280", strokeWidth: 1.5 },
+          },
+        ]
+      : [];
+
+  const topicChainEdges: Edge[] = graph.nodes.slice(0, -1).map((node, i) => ({
+    id: `topic-chain-${i}`,
+    source: node.id,
+    target: graph.nodes[i + 1].id,
+    markerEnd: { ...arrowMarker, color: "#4b5563" },
+    style: { stroke: "#4b5563", strokeWidth: 1.5 },
+  }));
+
+  const structuralEdges: Edge[] = graph.segments.map((seg) => ({
+    id: `topic-${seg.topicId}-${seg.id}`,
+    source: seg.topicId,
+    target: seg.id,
+    markerEnd: { ...arrowMarker, color: "#374151" },
+    style: { stroke: "#374151", strokeWidth: 1, strokeDasharray: "4 3" },
+    animated: false,
+  }));
+
+  const semanticEdges: Edge[] = graph.edges.map((edge, i) => {
+    const color = edgeColor(edge.relationshipType);
+    return {
+      id: `edge-${i}-${edge.source}-${edge.target}`,
+      source: edge.source,
+      target: edge.target,
+      animated: true,
+      markerEnd: { ...arrowMarker, color },
+      label: formatRelType(edge.relationshipType),
+      labelStyle: { fill: color, fontSize: 10 },
+      style: { stroke: color, strokeWidth: 1.5 },
+    };
+  });
+
+  return [...startEdges, ...topicChainEdges, ...structuralEdges, ...semanticEdges];
+}
+
+function syncNodeSelection(
+  nodes: Node[],
+  selectedSegmentIds: Set<string>,
+  onSegmentClick: (segment: GraphSegment) => void,
+  onSegmentSelect: (id: string, selected: boolean) => void
+): Node[] {
+  return nodes.map((node) => {
+    if (node.type !== "segment") return node;
+    const seg = (node.data as SegmentNodeData).segment;
+    const selected = selectedSegmentIds.has(seg.id);
+    if ((node.data as SegmentNodeData).selected === selected) return node;
+    return {
+      ...node,
+      data: { ...(node.data as SegmentNodeData), selected, onSegmentClick, onSegmentSelect },
+    };
+  });
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function VideoKnowledgeGraph({
@@ -182,152 +317,20 @@ export default function VideoKnowledgeGraph({
   selectedSegmentIds,
   onSegmentSelect,
 }: Props) {
-  // Build nodes: Start node → topic nodes left-to-right → segment nodes below each topic
-  const initialNodes = useMemo<Node[]>(() => {
-    const TOPIC_X_STEP = 320; // horizontal gap between topic columns
-    const TOPIC_Y = 80; // row for topic nodes
-    const SEG_Y_START = 230; // row for first segment under a topic
-    const SEG_Y_STEP = 170; // vertical gap between stacked segments
-    const START_X = 0;
-    const FIRST_TOPIC_X = 140; // leave room for the start node
+  const initialNodes = useMemo<Node[]>(
+    () => buildGraphNodes(graph, selectedSegmentIds, onSegmentClick, onSegmentSelect),
+    [graph, selectedSegmentIds, onSegmentClick, onSegmentSelect]
+  );
 
-    const topicPositions: Record<string, { x: number; y: number }> = {};
-
-    // Start node
-    const startNode: Node = {
-      id: "__start__",
-      type: "start",
-      position: { x: START_X, y: TOPIC_Y + 10 },
-      data: { label: "START" } as StartNodeData,
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
-    };
-
-    // Topic nodes — laid out left-to-right in the order Gemini produced them
-    const topicNodes: Node[] = graph.nodes.map((node, i) => {
-      const x = FIRST_TOPIC_X + i * TOPIC_X_STEP;
-      topicPositions[node.id] = { x, y: TOPIC_Y };
-      return {
-        id: node.id,
-        type: "topic",
-        position: { x, y: TOPIC_Y },
-        data: { node } as TopicNodeData,
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-      };
-    });
-
-    // Group segments by topicId (preserve insertion order)
-    const segsByTopic: Record<string, GraphSegment[]> = {};
-    for (const seg of graph.segments) {
-      if (!segsByTopic[seg.topicId]) segsByTopic[seg.topicId] = [];
-      segsByTopic[seg.topicId].push(seg);
-    }
-
-    const segmentNodes: Node[] = graph.segments.map((segment) => {
-      const parentPos = topicPositions[segment.topicId] ?? { x: 0, y: TOPIC_Y };
-      const siblings = segsByTopic[segment.topicId] ?? [];
-      const idx = siblings.indexOf(segment);
-      return {
-        id: segment.id,
-        type: "segment",
-        position: {
-          x: parentPos.x,
-          y: SEG_Y_START + idx * SEG_Y_STEP,
-        },
-        data: {
-          segment,
-          selected: selectedSegmentIds.has(segment.id),
-          onSegmentClick,
-          onSegmentSelect,
-        } as SegmentNodeData,
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-      };
-    });
-
-    return [startNode, ...topicNodes, ...segmentNodes];
-  }, [graph, selectedSegmentIds, onSegmentClick, onSegmentSelect]);
-
-  const initialEdges = useMemo<Edge[]>(() => {
-    const arrowMarker = {
-      type: MarkerType.ArrowClosed,
-      width: 14,
-      height: 14,
-    };
-
-    // Start → first topic
-    const startEdges: Edge[] =
-      graph.nodes.length > 0
-        ? [
-            {
-              id: "start-to-first",
-              source: "__start__",
-              target: graph.nodes[0].id,
-              markerEnd: { ...arrowMarker, color: "#6b7280" },
-              style: { stroke: "#6b7280", strokeWidth: 1.5 },
-            },
-          ]
-        : [];
-
-    // Topic → next topic (sequential flow)
-    const topicChainEdges: Edge[] = graph.nodes.slice(0, -1).map((node, i) => ({
-      id: `topic-chain-${i}`,
-      source: node.id,
-      target: graph.nodes[i + 1].id,
-      markerEnd: { ...arrowMarker, color: "#4b5563" },
-      style: { stroke: "#4b5563", strokeWidth: 1.5 },
-    }));
-
-    // Topic → its segments (structural, vertical drop)
-    const structuralEdges: Edge[] = graph.segments.map((seg) => ({
-      id: `topic-${seg.topicId}-${seg.id}`,
-      source: seg.topicId,
-      target: seg.id,
-      markerEnd: { ...arrowMarker, color: "#374151" },
-      style: { stroke: "#374151", strokeWidth: 1, strokeDasharray: "4 3" },
-      animated: false,
-    }));
-
-    // Semantic edges between segments
-    const semanticEdges: Edge[] = graph.edges.map((edge, i) => {
-      const color = edgeColor(edge.relationshipType);
-      return {
-        id: `edge-${i}-${edge.source}-${edge.target}`,
-        source: edge.source,
-        target: edge.target,
-        animated: true,
-        markerEnd: { ...arrowMarker, color },
-        label: formatRelType(edge.relationshipType),
-        labelStyle: { fill: color, fontSize: 10 },
-        style: { stroke: color, strokeWidth: 1.5 },
-      };
-    });
-
-    return [...startEdges, ...topicChainEdges, ...structuralEdges, ...semanticEdges];
-  }, [graph]);
+  const initialEdges = useMemo<Edge[]>(() => buildGraphEdges(graph), [graph]);
 
   const [nodes, , onNodesChange] = useNodesState(initialNodes);
   const [edges, , onEdgesChange] = useEdgesState(initialEdges);
 
-  // Keep segment selected state in sync when selectedSegmentIds changes
-  const nodesWithSelection = useMemo(() => {
-    return nodes.map((node) => {
-      if (node.type !== "segment") return node;
-      const seg = (node.data as SegmentNodeData).segment;
-      const selected = selectedSegmentIds.has(seg.id);
-      if ((node.data as SegmentNodeData).selected === selected) return node;
-      return {
-        ...node,
-        data: {
-          ...(node.data as SegmentNodeData),
-          selected,
-          onSegmentClick,
-          onSegmentSelect,
-        },
-      };
-    });
-  }, [nodes, selectedSegmentIds, onSegmentClick, onSegmentSelect]);
+  const nodesWithSelection = useMemo(
+    () => syncNodeSelection(nodes, selectedSegmentIds, onSegmentClick, onSegmentSelect),
+    [nodes, selectedSegmentIds, onSegmentClick, onSegmentSelect]
+  );
 
   return (
     <div className="relative w-full h-full bg-gray-950">

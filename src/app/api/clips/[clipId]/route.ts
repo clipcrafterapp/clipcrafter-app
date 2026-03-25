@@ -9,6 +9,69 @@ const VALID_STATUSES = ["pending", "approved", "rejected", "exporting", "exporte
 const VALID_CAPTION_STYLES = ["hormozi", "modern", "neon", "minimal"] as const;
 const VALID_ASPECT_RATIOS = ["9:16", "1:1", "16:9"] as const;
 
+function applyEnumUpdate<T extends string>(
+  body: Record<string, unknown>,
+  key: string,
+  validValues: readonly T[],
+  updates: Record<string, unknown>
+): string | null {
+  if (!(key in body)) return null;
+  if (!validValues.includes(body[key] as T)) {
+    return `Invalid ${key}. Must be one of: ${validValues.join(", ")}`;
+  }
+  updates[key] = body[key];
+  return null;
+}
+
+function applyNumericUpdate(
+  body: Record<string, unknown>,
+  key: string,
+  updates: Record<string, unknown>
+): string | null {
+  if (!(key in body)) return null;
+  const v = Number(body[key]);
+  if (!Number.isFinite(v) || v < 0) return `Invalid ${key}`;
+  updates[key] = v;
+  return null;
+}
+
+function buildClipUpdates(body: Record<string, unknown>): {
+  updates: Record<string, unknown>;
+  error: string | null;
+} {
+  const updates: Record<string, unknown> = {};
+  const errors = [
+    applyEnumUpdate(body, "status", VALID_STATUSES, updates),
+    applyEnumUpdate(body, "caption_style", VALID_CAPTION_STYLES, updates),
+    applyEnumUpdate(body, "aspect_ratio", VALID_ASPECT_RATIOS, updates),
+    applyNumericUpdate(body, "start_sec", updates),
+    applyNumericUpdate(body, "end_sec", updates),
+  ].filter(Boolean);
+  return { updates, error: errors[0] ?? null };
+}
+
+async function authorizeClipAccess(
+  clipId: string,
+  supabaseUserId: string
+): Promise<{ clip: Record<string, unknown> | null; error: Response | null }> {
+  const { data: clip, error } = await supabaseAdmin
+    .from("clips")
+    .select("id, project_id, status, caption_style, aspect_ratio, projects(user_id)")
+    .eq("id", clipId)
+    .single();
+
+  if (error || !clip)
+    return { clip: null, error: Response.json({ error: "Clip not found" }, { status: 404 }) };
+
+  type ClipRow = typeof clip & { projects: { user_id: string } | null };
+  const typedClip = clip as ClipRow;
+  if (typedClip.projects?.user_id !== supabaseUserId) {
+    return { clip: null, error: Response.json({ error: "Forbidden" }, { status: 403 }) };
+  }
+
+  return { clip, error: null };
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ clipId: string }> }) {
   const { userId } = await auth();
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -18,20 +81,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cl
 
   const { clipId } = await params;
 
-  // Fetch clip with project ownership info
-  const { data: clip, error } = await supabaseAdmin
-    .from("clips")
-    .select("id, project_id, status, caption_style, aspect_ratio, projects(user_id)")
-    .eq("id", clipId)
-    .single();
-
-  if (error || !clip) return Response.json({ error: "Clip not found" }, { status: 404 });
-
-  type ClipRow = typeof clip & { projects: { user_id: string } | null };
-  const typedClip = clip as ClipRow;
-  if (typedClip.projects?.user_id !== supabaseUserId) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const { error: authError } = await authorizeClipAccess(clipId, supabaseUserId);
+  if (authError) return authError;
 
   let body: Record<string, unknown>;
   try {
@@ -40,68 +91,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cl
     body = {};
   }
 
-  const updates: Record<string, unknown> = {};
-
-  if ("status" in body) {
-    if (!VALID_STATUSES.includes(body.status as (typeof VALID_STATUSES)[number])) {
-      return Response.json(
-        { error: `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}` },
-        { status: 400 }
-      );
-    }
-    updates.status = body.status;
-  }
-
-  if ("caption_style" in body) {
-    if (
-      !VALID_CAPTION_STYLES.includes(body.caption_style as (typeof VALID_CAPTION_STYLES)[number])
-    ) {
-      return Response.json(
-        { error: `Invalid caption_style. Must be one of: ${VALID_CAPTION_STYLES.join(", ")}` },
-        { status: 400 }
-      );
-    }
-    updates.caption_style = body.caption_style;
-  }
-
-  if ("aspect_ratio" in body) {
-    if (!VALID_ASPECT_RATIOS.includes(body.aspect_ratio as (typeof VALID_ASPECT_RATIOS)[number])) {
-      return Response.json(
-        { error: `Invalid aspect_ratio. Must be one of: ${VALID_ASPECT_RATIOS.join(", ")}` },
-        { status: 400 }
-      );
-    }
-    updates.aspect_ratio = body.aspect_ratio;
-  }
-
-  if ("start_sec" in body) {
-    const v = Number(body.start_sec);
-    if (!Number.isFinite(v) || v < 0) {
-      return Response.json({ error: "Invalid start_sec" }, { status: 400 });
-    }
-    updates.start_sec = v;
-  }
-
-  if ("end_sec" in body) {
-    const v = Number(body.end_sec);
-    if (!Number.isFinite(v) || v < 0) {
-      return Response.json({ error: "Invalid end_sec" }, { status: 400 });
-    }
-    updates.end_sec = v;
-  }
-
+  const { updates, error: buildError } = buildClipUpdates(body);
+  if (buildError) return Response.json({ error: buildError }, { status: 400 });
   if (Object.keys(updates).length === 0) {
     return Response.json({ error: "No valid fields to update" }, { status: 400 });
   }
-
   const { data: updated, error: updateError } = await supabaseAdmin
     .from("clips")
     .update(updates)
     .eq("id", clipId)
     .select()
     .single();
-
   if (updateError) return Response.json({ error: updateError.message }, { status: 500 });
-
   return Response.json({ clip: updated }, { status: 200 });
 }

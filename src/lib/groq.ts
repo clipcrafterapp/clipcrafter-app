@@ -152,24 +152,24 @@ export async function transcribeAudio(audioPath: string): Promise<TranscriptResu
 
   // Fast path: file is small enough to send directly
   if (stats.size <= GROQ_MAX_BYTES) {
-    console.log(`Transcribing ${(stats.size / 1024 / 1024).toFixed(1)}MB directly`);
+    console.warn(`Transcribing ${(stats.size / 1024 / 1024).toFixed(1)}MB directly`);
     return transcribeChunk(audioPath, 0);
   }
 
   // Slow path: split into chunks
   const durationSec = await getAudioDurationSec(audioPath);
   const estimatedChunks = Math.ceil(durationSec / CHUNK_DURATION_SEC);
-  console.log(
+  console.warn(
     `Audio ${(stats.size / 1024 / 1024).toFixed(1)}MB, ${Math.round(durationSec / 60)}min — splitting into ~${estimatedChunks} chunks of ${CHUNK_DURATION_SEC / 60}min`
   );
 
   const chunkFiles = await splitAudioIntoChunks(audioPath, CHUNK_DURATION_SEC);
-  console.log(`Created ${chunkFiles.length} chunks`);
+  console.warn(`Created ${chunkFiles.length} chunks`);
 
   const results: TranscriptResult[] = [];
   for (let i = 0; i < chunkFiles.length; i++) {
     const timeOffsetSec = i * CHUNK_DURATION_SEC;
-    console.log(`Transcribing chunk ${i + 1}/${chunkFiles.length} (offset: ${timeOffsetSec}s)`);
+    console.warn(`Transcribing chunk ${i + 1}/${chunkFiles.length} (offset: ${timeOffsetSec}s)`);
     const result = await transcribeChunk(chunkFiles[i], timeOffsetSec);
     results.push(result);
 
