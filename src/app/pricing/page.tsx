@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { PLAN_PRICES, PLAN_LIMITS } from "@/lib/billing";
+import { PLAN_PRICES } from "@/lib/billing";
 
 const PLANS = [
   {
