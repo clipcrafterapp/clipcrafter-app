@@ -21,11 +21,41 @@ type ClipRow = {
   id: string;
   start_sec: number;
   end_sec: number;
-  export_url: string | null;
   clip_title: string | null;
 };
 
-async function downloadFromR2(r2Key: string, outputPath: string): Promise<void> {
+function isYouTubeUrl(str: string): boolean {
+  return /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(str);
+}
+
+async function getR2PresignedUrl(r2Key: string, expiresIn = 3600): Promise<string> {
+  return getSignedUrl(r2Client, new GetObjectCommand({ Bucket: R2_BUCKET, Key: r2Key }), {
+    expiresIn,
+  });
+}
+
+async function downloadYouTubeVideo(url: string, outputPath: string): Promise<void> {
+  await execFileAsync(
+    "yt-dlp",
+    [
+      "--format",
+      "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+      "--merge-output-format",
+      "mp4",
+      "--output",
+      outputPath,
+      "--no-playlist",
+      "--extractor-args",
+      "youtube:player_client=web,android",
+      "--socket-timeout",
+      "30",
+      url,
+    ],
+    { timeout: 5 * 60 * 1000 }
+  );
+}
+
+async function downloadFromR2ToFile(r2Key: string, outputPath: string): Promise<void> {
   const response = await r2Client.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: r2Key }));
   const body = response.Body as AsyncIterable<Uint8Array>;
   const chunks: Buffer[] = [];
@@ -41,57 +71,91 @@ export async function stitchClipsHandler(
 ): Promise<Record<string, unknown>> {
   const { projectId, clipIds } = event.data;
 
-  // Use event ID for stable tmp paths across retries
+  // Stable tmp paths keyed by event ID (safe across Inngest step retries)
   const stableId = event.id.replace(/[^a-z0-9]/gi, "-").slice(0, 40);
-  const outputPath = path.join(os.tmpdir(), `stitch-${stableId}.mp4`);
-  const concatPath = path.join(os.tmpdir(), `concat-${stableId}.txt`);
+  const tmpDir = os.tmpdir();
+  const concatPath = path.join(tmpDir, `stitch-concat-${stableId}.txt`);
+  const outputPath = path.join(tmpDir, `stitch-out-${stableId}.mp4`);
+  const sourceVideoPath = path.join(tmpDir, `stitch-source-${stableId}.mp4`);
 
-  // Step 1: Fetch clips from Supabase and validate all are exported
-  const clips = (await step.run("fetch-clips", async () => {
-    const { data, error } = await supabaseAdmin
+  // ── Step 1: fetch clips + project source video from DB ──
+  const { clips, r2Key, isYouTube } = (await step.run("fetch-data", async () => {
+    const { data: clipData, error: clipError } = await supabaseAdmin
       .from("clips")
-      .select("id, start_sec, end_sec, export_url, clip_title")
+      .select("id, start_sec, end_sec, clip_title")
       .eq("project_id", projectId)
       .in("id", clipIds);
 
-    if (error || !data) throw new Error("Failed to fetch clips from database");
+    if (clipError || !clipData) throw new Error("Failed to fetch clips from database");
 
-    const missing = (data as ClipRow[]).filter((c) => !c.export_url);
-    if (missing.length > 0) {
-      throw new Error(
-        `${missing.length} clip(s) not yet exported. Export them individually first.`
-      );
-    }
+    const { data: projectData, error: projError } = await supabaseAdmin
+      .from("projects")
+      .select("r2_key")
+      .eq("id", projectId)
+      .single();
 
-    return (data as ClipRow[]).sort((a, b) => a.start_sec - b.start_sec);
-  })) as ClipRow[];
+    if (projError || !projectData?.r2_key) throw new Error(`Project ${projectId} has no r2_key`);
 
-  // Derive deterministic local paths
-  const downloadedPaths = clips.map((clip) =>
-    path.join(os.tmpdir(), `stitch-clip-${stableId}-${clip.id}.mp4`)
-  );
+    // Sort clips by start time so the stitched video is chronological
+    const sorted = (clipData as ClipRow[]).sort((a, b) => a.start_sec - b.start_sec);
 
-  // Step 2: Download each clip's MP4 from R2
-  await step.run("download-clips", async () => {
-    for (let i = 0; i < clips.length; i++) {
-      const r2Key = `exports/${projectId}/${clips[i].id}.mp4`;
-      await downloadFromR2(r2Key, downloadedPaths[i]);
+    return {
+      clips: sorted,
+      r2Key: projectData.r2_key as string,
+      isYouTube: isYouTubeUrl(projectData.r2_key),
+    };
+  })) as { clips: ClipRow[]; r2Key: string; isYouTube: boolean };
+
+  // ── Step 2: get the source video locally ──
+  // R2 video  → download directly
+  // YouTube   → yt-dlp download
+  await step.run("download-source", async () => {
+    if (isYouTube) {
+      await downloadYouTubeVideo(r2Key, sourceVideoPath);
+    } else {
+      await downloadFromR2ToFile(r2Key, sourceVideoPath);
     }
   });
 
-  // Step 3: Stitch with ffmpeg and upload to R2
-  const stitchUrl = (await step.run("stitch-and-upload", async () => {
-    // Write ffmpeg concat manifest
-    const concatContent = downloadedPaths.map((p) => `file '${p}'`).join("\n");
+  // ── Step 3: cut each clip segment from the source & stitch together ──
+  const stitchUrl = (await step.run("cut-and-stitch", async () => {
+    // Cut each clip into its own tmp file
+    const segmentPaths: string[] = [];
+    for (const clip of clips) {
+      const segPath = path.join(tmpDir, `stitch-seg-${stableId}-${clip.id}.mp4`);
+      segmentPaths.push(segPath);
+      await execFileAsync(
+        "ffmpeg",
+        [
+          "-ss",
+          String(clip.start_sec),
+          "-to",
+          String(clip.end_sec),
+          "-i",
+          sourceVideoPath,
+          "-c",
+          "copy",
+          "-avoid_negative_ts",
+          "make_zero",
+          "-y",
+          segPath,
+        ],
+        { timeout: 5 * 60 * 1000 }
+      );
+    }
+
+    // Write concat manifest
+    const concatContent = segmentPaths.map((p) => `file '${p}'`).join("\n");
     await fs.writeFile(concatPath, concatContent);
 
-    // ffmpeg concat demuxer — copy streams without re-encoding
+    // Concat all segments — copy streams, no re-encode
     await execFileAsync(
       "ffmpeg",
       ["-f", "concat", "-safe", "0", "-i", concatPath, "-c", "copy", "-y", outputPath],
       { timeout: 10 * 60 * 1000 }
     );
 
+    // Upload to R2
     const stitchedKey = `exports/${projectId}/stitched-${stableId}.mp4`;
     await r2Client.send(
       new PutObjectCommand({
@@ -102,19 +166,20 @@ export async function stitchClipsHandler(
       })
     );
 
-    const url = await getSignedUrl(
-      r2Client,
-      new GetObjectCommand({ Bucket: R2_BUCKET, Key: stitchedKey }),
-      { expiresIn: 7 * 24 * 3600 }
-    );
+    // Presign for 7 days
+    const url = await getR2PresignedUrl(stitchedKey, 7 * 24 * 3600);
+
+    // Cleanup segment files
+    await Promise.all(segmentPaths.map((p) => fs.unlink(p).catch(() => undefined)));
 
     return url;
   })) as string;
 
-  // Step 4: Cleanup tmp files
+  // ── Step 4: cleanup source + working files ──
   await step.run("cleanup", async () => {
-    const toDelete = [...downloadedPaths, concatPath, outputPath];
-    await Promise.all(toDelete.map((f) => fs.unlink(f).catch(() => undefined)));
+    await Promise.all(
+      [sourceVideoPath, concatPath, outputPath].map((f) => fs.unlink(f).catch(() => undefined))
+    );
   });
 
   return { projectId, stitchUrl, clipCount: clips.length };
