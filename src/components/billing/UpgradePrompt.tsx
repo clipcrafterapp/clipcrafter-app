@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { PLAN_PRICES, PLAN_LIMITS } from "@/lib/billing";
+// Static plan data — do NOT import from billing.ts (server-only module)
+const PLAN_PRICES = { free: 0, pro: 9, team: 29 };
+const PLAN_LIMITS: Record<string, number> = { free: 30, pro: 600, team: Infinity };
 
 interface UpgradePromptProps {
   open: boolean;

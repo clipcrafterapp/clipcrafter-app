@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { PLAN_PRICES } from "@/lib/billing";
+// Plan prices are static — do NOT import from billing.ts (server-only module)
+const PLAN_PRICES = { free: 0, pro: 9, team: 29 };
 
 const PLANS = [
   {
