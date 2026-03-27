@@ -1,6 +1,7 @@
 type Tier = {
   name: string;
   price: string;
+  originalPrice?: string;
   description: string;
   features: string[];
   cta: string;
@@ -36,7 +37,8 @@ const TIERS: Tier[] = [
   },
   {
     name: "Starter",
-    price: "₹999/mo",
+    price: "₹9/mo",
+    originalPrice: "₹999/mo",
     description: "For creators publishing regularly.",
     features: [
       "5 hrs/month processing",
@@ -50,7 +52,8 @@ const TIERS: Tier[] = [
   },
   {
     name: "Pro",
-    price: "₹2,499/mo",
+    price: "₹90/mo",
+    originalPrice: "₹2,499/mo",
     description: "For power users and teams.",
     features: [
       "20 hrs/month processing",
@@ -73,12 +76,17 @@ function PricingCard({ tier }: { tier: Tier }) {
     >
       <div>
         <h2 className="text-xl font-bold">{tier.name}</h2>
-        <p className="text-3xl font-bold mt-1">
-          {tier.price}
-          {tier.price !== "₹0" && tier.price !== "₹999/mo" && tier.price !== "₹2,499/mo" && (
-            <span className="text-sm font-normal text-gray-400">/mo</span>
+        <div className="mt-1 flex items-baseline gap-2">
+          <p className="text-3xl font-bold">{tier.price}</p>
+          {tier.originalPrice && (
+            <span className="text-sm text-gray-500 line-through">{tier.originalPrice}</span>
           )}
-        </p>
+        </div>
+        {tier.originalPrice && (
+          <span className="inline-block mt-1 text-xs font-semibold text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
+            Alpha pricing until June 2026
+          </span>
+        )}
         <p className="text-sm text-gray-400 mt-2">{tier.description}</p>
       </div>
       <ul className="flex-1 space-y-2">
@@ -135,7 +143,7 @@ export default function PricingPage() {
           <h1 className="text-4xl font-bold mb-4">Simple, transparent pricing</h1>
           <p className="text-gray-400 text-lg">All prices in INR. Powered by Razorpay.</p>
           <p className="text-gray-500 text-sm mt-2">
-            Note: Secure payments via Razorpay. Cancel anytime.
+            Note: Alpha pricing until June 2026. Secure payments via Razorpay. Cancel anytime.
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
