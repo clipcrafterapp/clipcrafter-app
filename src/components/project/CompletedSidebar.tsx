@@ -254,37 +254,60 @@ type ClipViewProps = Pick<
   onOpenDownloads?: () => void;
 };
 
+function ClipViewBody(props: ClipViewProps & { clips: NonNullable<ClipViewProps["clips"]> }) {
+  const { viewMode, computedGraph, sortedClips, clips } = props;
+  if (viewMode === "graph" && computedGraph) {
+    return (
+      <GraphView
+        computedGraph={computedGraph}
+        clips={clips}
+        sortedClips={sortedClips ?? []}
+        selectedClipIds={props.selectedClipIds}
+        selectedClipId={props.selectedClipId}
+        topicOverrides={props.topicOverrides}
+        videoRef={props.videoRef}
+        onSetSelectedClipId={props.onSetSelectedClipId}
+        onSeekToClip={props.onSeekToClip}
+        onSetSelectedClipIds={props.onSetSelectedClipIds}
+        onUpdateTopicLabel={props.onUpdateTopicLabel}
+        onSetTopicOverrides={props.onSetTopicOverrides}
+        onExportBatch={props.onExportBatch}
+        onSwitchView={props.onSwitchView}
+        onClipAction={props.onClipAction}
+      />
+    );
+  }
+  if (viewMode === "list" && sortedClips && sortedClips.length > 0) {
+    return (
+      <ClipListView
+        sortedClips={sortedClips}
+        selectedClipId={props.selectedClipId}
+        selectedClipIds={props.selectedClipIds}
+        selectedTopic={props.selectedTopic}
+        clipsStatus={props.clipsStatus}
+        clips={clips}
+        withCaptions={props.withCaptions}
+        onSetSelectedTopic={props.onSetSelectedTopic}
+        onSetSelectedClipId={props.onSetSelectedClipId}
+        onSeekToClip={props.onSeekToClip}
+        onToggleClipCheck={props.onToggleClipCheck}
+        onSelectAll={props.onSelectAll}
+        onDeselectAll={props.onDeselectAll}
+        onToggleCaptions={props.onToggleCaptions}
+        onExportBatch={props.onExportBatch}
+        onClipAction={props.onClipAction}
+        onExportClip={props.onExportClip}
+        onGenerateClips={props.onGenerateClips}
+        onOpenDownloads={props.onOpenDownloads}
+        onStitchExport={props.onStitchExport}
+      />
+    );
+  }
+  return null;
+}
+
 function ClipView(props: ClipViewProps) {
-  const {
-    clips,
-    sortedClips,
-    computedGraph,
-    viewMode,
-    clipsStatus,
-    selectedClipId,
-    selectedClipIds,
-    selectedTopic,
-    withCaptions,
-    topicOverrides,
-    videoRef,
-    onSwitchView,
-    onGenerateClips,
-    onSetSelectedTopic,
-    onSetSelectedClipId,
-    onSeekToClip,
-    onToggleClipCheck,
-    onSelectAll,
-    onDeselectAll,
-    onToggleCaptions,
-    onExportBatch,
-    onClipAction,
-    onExportClip,
-    onSetSelectedClipIds,
-    onUpdateTopicLabel,
-    onSetTopicOverrides,
-    onOpenDownloads,
-    onStitchExport,
-  } = props;
+  const { clips, clipsStatus, onGenerateClips } = props;
   if (clipsStatus === "generating") return <ClipSkeleton />;
   if (clipsStatus === "error")
     return (
@@ -295,54 +318,7 @@ function ClipView(props: ClipViewProps) {
     );
   if (clips === null || clips.length === 0)
     return <NoClipsState onGenerateClips={onGenerateClips} />;
-  if (viewMode === "graph" && computedGraph) {
-    return (
-      <GraphView
-        computedGraph={computedGraph}
-        clips={clips}
-        sortedClips={sortedClips ?? []}
-        selectedClipIds={selectedClipIds}
-        selectedClipId={selectedClipId}
-        topicOverrides={topicOverrides}
-        videoRef={videoRef}
-        onSetSelectedClipId={onSetSelectedClipId}
-        onSeekToClip={onSeekToClip}
-        onSetSelectedClipIds={onSetSelectedClipIds}
-        onUpdateTopicLabel={onUpdateTopicLabel}
-        onSetTopicOverrides={onSetTopicOverrides}
-        onExportBatch={onExportBatch}
-        onSwitchView={onSwitchView}
-        onClipAction={onClipAction}
-      />
-    );
-  }
-  if (viewMode === "list" && sortedClips && sortedClips.length > 0) {
-    return (
-      <ClipListView
-        sortedClips={sortedClips}
-        selectedClipId={selectedClipId}
-        selectedClipIds={selectedClipIds}
-        selectedTopic={selectedTopic}
-        clipsStatus={clipsStatus}
-        clips={clips}
-        withCaptions={withCaptions}
-        onSetSelectedTopic={onSetSelectedTopic}
-        onSetSelectedClipId={onSetSelectedClipId}
-        onSeekToClip={onSeekToClip}
-        onToggleClipCheck={onToggleClipCheck}
-        onSelectAll={onSelectAll}
-        onDeselectAll={onDeselectAll}
-        onToggleCaptions={onToggleCaptions}
-        onExportBatch={onExportBatch}
-        onClipAction={onClipAction}
-        onExportClip={onExportClip}
-        onGenerateClips={onGenerateClips}
-        onOpenDownloads={onOpenDownloads}
-        onStitchExport={onStitchExport}
-      />
-    );
-  }
-  return null;
+  return <ClipViewBody {...props} clips={clips} />;
 }
 
 function GenerateSection(p: CompletedSidebarProps) {

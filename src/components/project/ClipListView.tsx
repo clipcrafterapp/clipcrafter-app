@@ -155,38 +155,64 @@ export interface ClipListViewProps {
   onStitchExport?: () => void;
 }
 
-export function ClipListView({
-  sortedClips,
-  selectedClipId,
-  selectedClipIds,
-  selectedTopic,
-  clipsStatus,
-  clips,
-  withCaptions,
-  onSetSelectedTopic,
-  onSetSelectedClipId,
-  onSeekToClip,
-  onToggleClipCheck,
-  onSelectAll,
-  onDeselectAll,
-  onToggleCaptions,
-  onExportBatch,
-  onClipAction,
-  onExportClip,
-  onGenerateClips,
-  onOpenDownloads,
-  onStitchExport,
-}: ClipListViewProps) {
-  const [activeTab, setActiveTab] = useState<"clips" | "skipped">("clips");
+function ClipTabNav({
+  activeTab,
+  regularCount,
+  skippedCount,
+  onSwitch,
+}: {
+  activeTab: "clips" | "skipped";
+  regularCount: number;
+  skippedCount: number;
+  onSwitch: (tab: "clips" | "skipped") => void;
+}) {
+  return (
+    <nav
+      role="tablist"
+      aria-label="Clip categories"
+      className="flex border-b border-gray-800 -mx-4 px-4"
+    >
+      <button
+        role="tab"
+        type="button"
+        aria-selected={activeTab === "clips"}
+        onClick={() => onSwitch("clips")}
+        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "clips" ? "border-violet-500 text-white" : "border-transparent text-gray-400 hover:text-white"}`}
+      >
+        Clips ({regularCount})
+      </button>
+      <button
+        role="tab"
+        type="button"
+        aria-selected={activeTab === "skipped"}
+        onClick={() => onSwitch("skipped")}
+        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "skipped" ? "border-violet-500 text-white" : "border-transparent text-gray-400 hover:text-white"}`}
+      >
+        Skipped ({skippedCount})
+      </button>
+    </nav>
+  );
+}
+
+function SkippedList({ clips, onRestore }: { clips: Clip[]; onRestore: (id: string) => void }) {
+  return (
+    <ul className="flex flex-col gap-3">
+      {clips.length === 0 && (
+        <li>
+          <p className="text-sm text-gray-500 text-center py-8">No skipped clips</p>
+        </li>
+      )}
+      {clips.map((clip) => (
+        <li key={clip.id}>
+          <SkippedClipCard clip={clip} onRestore={onRestore} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function useAutoDownload(clips: Clip[] | null, onOpenDownloads?: () => void) {
   const prevClipsRef = useRef<Clip[]>([]);
-
-  const regularClips = sortedClips.filter((c) => c.status !== "rejected");
-  const skippedClips = sortedClips.filter((c) => c.status === "rejected");
-  const displayClips =
-    activeTab === "clips"
-      ? regularClips.filter((c) => !selectedTopic || c.topic === selectedTopic)
-      : skippedClips.filter((c) => !selectedTopic || c.topic === selectedTopic);
-
   useEffect(() => {
     if (!clips) return;
     clips.forEach((clip) => {
@@ -205,7 +231,96 @@ export function ClipListView({
     });
     prevClipsRef.current = clips;
   }, [clips, onOpenDownloads]);
+}
 
+type ClipBodyProps = {
+  hasTabs: boolean;
+  activeTab: "clips" | "skipped";
+  setActiveTab: (t: "clips" | "skipped") => void;
+  regularClips: Clip[];
+  skippedClips: Clip[];
+  displayClips: Clip[];
+} & Omit<
+  ClipListViewProps,
+  "sortedClips" | "selectedTopic" | "onSetSelectedTopic" | "onOpenDownloads"
+>;
+
+function ClipBody(p: ClipBodyProps) {
+  if (!p.hasTabs) return null;
+  const keepAll = () =>
+    p.regularClips.forEach((c) => {
+      if (c.status !== "approved") p.onClipAction(c.id, { status: "approved" });
+    });
+  return (
+    <>
+      <ClipTabNav
+        activeTab={p.activeTab}
+        regularCount={p.regularClips.length}
+        skippedCount={p.skippedClips.length}
+        onSwitch={p.setActiveTab}
+      />
+      {p.activeTab === "clips" && p.regularClips.length > 0 && (
+        <ExportBar
+          sortedClips={p.regularClips}
+          selectedClipIds={p.selectedClipIds}
+          withCaptions={p.withCaptions}
+          clips={p.clips}
+          allApproved={p.regularClips.every((c) => c.status === "approved")}
+          onSelectAll={p.onSelectAll}
+          onDeselectAll={p.onDeselectAll}
+          onToggleCaptions={p.onToggleCaptions}
+          onExportBatch={p.onExportBatch}
+          onKeepAll={keepAll}
+          onStitchExport={p.onStitchExport}
+        />
+      )}
+      <div className="flex flex-col gap-3">
+        {p.activeTab === "clips" &&
+          p.displayClips.map((clip) => (
+            <ClipCard
+              key={clip.id}
+              clip={clip}
+              isSelected={clip.id === p.selectedClipId}
+              isChecked={p.selectedClipIds.has(clip.id)}
+              onSelect={p.onSetSelectedClipId}
+              onSeekToClip={p.onSeekToClip}
+              onToggleCheck={p.onToggleClipCheck}
+              onClipAction={p.onClipAction}
+              onExportClip={p.onExportClip}
+            />
+          ))}
+        {p.activeTab === "skipped" && (
+          <SkippedList
+            clips={p.displayClips}
+            onRestore={(id) => p.onClipAction(id, { status: "pending" })}
+          />
+        )}
+        <div className="flex justify-center pt-1">
+          <button
+            type="button"
+            onClick={p.onGenerateClips}
+            disabled={p.clipsStatus === "generating"}
+            className="text-xs text-gray-600 hover:text-gray-400 transition-colors disabled:opacity-50"
+          >
+            ↺ Regenerate Clips
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function ClipListView(props: ClipListViewProps) {
+  const { sortedClips, selectedTopic, clipsStatus, clips, onSetSelectedTopic, onOpenDownloads } =
+    props;
+  const [activeTab, setActiveTab] = useState<"clips" | "skipped">("clips");
+  useAutoDownload(clips, onOpenDownloads);
+
+  const regularClips = sortedClips.filter((c) => c.status !== "rejected");
+  const skippedClips = sortedClips.filter((c) => c.status === "rejected");
+  const filterByTopic = (arr: Clip[]) =>
+    arr.filter((c) => !selectedTopic || c.topic === selectedTopic);
+  const displayClips = filterByTopic(activeTab === "clips" ? regularClips : skippedClips);
   const hasTabs = clipsStatus !== "generating" && sortedClips.length > 0;
 
   return (
@@ -215,96 +330,15 @@ export function ClipListView({
         selectedTopic={selectedTopic}
         onSetSelectedTopic={onSetSelectedTopic}
       />
-      {hasTabs && (
-        <nav
-          role="tablist"
-          aria-label="Clip categories"
-          className="flex border-b border-gray-800 -mx-4 px-4"
-        >
-          <button
-            role="tab"
-            type="button"
-            aria-selected={activeTab === "clips"}
-            onClick={() => setActiveTab("clips")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "clips" ? "border-violet-500 text-white" : "border-transparent text-gray-400 hover:text-white"}`}
-          >
-            Clips ({regularClips.length})
-          </button>
-          <button
-            role="tab"
-            type="button"
-            aria-selected={activeTab === "skipped"}
-            onClick={() => setActiveTab("skipped")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "skipped" ? "border-violet-500 text-white" : "border-transparent text-gray-400 hover:text-white"}`}
-          >
-            Skipped ({skippedClips.length})
-          </button>
-        </nav>
-      )}
-      {hasTabs && activeTab === "clips" && regularClips.length > 0 && (
-        <ExportBar
-          sortedClips={regularClips}
-          selectedClipIds={selectedClipIds}
-          withCaptions={withCaptions}
-          clips={clips}
-          allApproved={regularClips.every((c) => c.status === "approved")}
-          onSelectAll={onSelectAll}
-          onDeselectAll={onDeselectAll}
-          onToggleCaptions={onToggleCaptions}
-          onExportBatch={onExportBatch}
-          onKeepAll={() => {
-            regularClips.forEach((clip) => {
-              if (clip.status !== "approved") onClipAction(clip.id, { status: "approved" });
-            });
-          }}
-          onStitchExport={onStitchExport}
-        />
-      )}
-      {hasTabs && (
-        <div className="flex flex-col gap-3">
-          {activeTab === "clips" &&
-            displayClips.map((clip) => (
-              <ClipCard
-                key={clip.id}
-                clip={clip}
-                isSelected={clip.id === selectedClipId}
-                isChecked={selectedClipIds.has(clip.id)}
-                onSelect={onSetSelectedClipId}
-                onSeekToClip={onSeekToClip}
-                onToggleCheck={onToggleClipCheck}
-                onClipAction={onClipAction}
-                onExportClip={onExportClip}
-              />
-            ))}
-          {activeTab === "skipped" && (
-            <ul className="flex flex-col gap-3">
-              {displayClips.length === 0 && (
-                <li>
-                  <p className="text-sm text-gray-500 text-center py-8">No skipped clips</p>
-                </li>
-              )}
-              {displayClips.map((clip) => (
-                <li key={clip.id}>
-                  <SkippedClipCard
-                    clip={clip}
-                    onRestore={(clipId) => onClipAction(clipId, { status: "pending" })}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="flex justify-center pt-1">
-            <button
-              type="button"
-              onClick={onGenerateClips}
-              disabled={clipsStatus === "generating"}
-              className="text-xs text-gray-600 hover:text-gray-400 transition-colors disabled:opacity-50"
-            >
-              ↺ Regenerate Clips
-            </button>
-          </div>
-        </div>
-      )}
+      <ClipBody
+        {...props}
+        hasTabs={hasTabs}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        regularClips={regularClips}
+        skippedClips={skippedClips}
+        displayClips={displayClips}
+      />
     </>
   );
 }

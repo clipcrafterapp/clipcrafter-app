@@ -125,6 +125,35 @@ function ProjectHeader({ data, onDelete }: { data: ProjectData["data"]; onDelete
   );
 }
 
+const EDIT_PENCIL_PATH =
+  "M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 0l.172.172a2 2 0 010 2.828L12 16H9v-3z";
+
+function InlineTitleInput({
+  editValue,
+  inputRef,
+  onChange,
+  onBlur,
+  onKeyDown,
+}: {
+  editValue: string;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onChange: (v: string) => void;
+  onBlur: () => void;
+  onKeyDown: (e: React.KeyboardEvent) => void;
+}) {
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={editValue}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
+      onKeyDown={onKeyDown}
+      className="text-xs text-white bg-gray-800 border border-violet-500 rounded px-2 py-0.5 w-48 focus:outline-none"
+    />
+  );
+}
+
 /** Inline-editable project title */
 function InlineTitle({
   projectId,
@@ -162,32 +191,28 @@ function InlineTitle({
       });
       if (res.ok) {
         onSave(trimmed);
-        setEditing(false);
       } else {
         toast.error("Failed to update project name");
-        setEditing(false);
       }
     } catch {
       toast.error("Network error — could not save title");
-      setEditing(false);
     }
+    setEditing(false);
   }
 
   const displayTitle = title.length > 30 ? title.slice(0, 30) + "…" : title;
 
   if (editing) {
     return (
-      <input
-        ref={inputRef}
-        type="text"
-        value={editValue}
-        onChange={(e) => setEditValue(e.target.value)}
+      <InlineTitleInput
+        editValue={editValue}
+        inputRef={inputRef}
+        onChange={setEditValue}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === "Enter") commit();
           if (e.key === "Escape") setEditing(false);
         }}
-        className="text-xs text-white bg-gray-800 border border-violet-500 rounded px-2 py-0.5 w-48 focus:outline-none"
       />
     );
   }
@@ -207,12 +232,7 @@ function InlineTitle({
         fill="none"
         stroke="currentColor"
       >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 012.828 0l.172.172a2 2 0 010 2.828L12 16H9v-3z"
-        />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={EDIT_PENCIL_PATH} />
       </svg>
     </button>
   );

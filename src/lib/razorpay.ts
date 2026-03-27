@@ -1,6 +1,7 @@
 import crypto from "crypto";
 
-// TODO: Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in your environment variables
+// Requires RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in environment variables.
+// Get these from the Razorpay dashboard → Settings → API Keys.
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID ?? "";
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET ?? "";
 const RAZORPAY_API_BASE = "https://api.razorpay.com/v1";
@@ -37,12 +38,13 @@ export async function createSubscription(
   clerkUserId: string,
   planId: string
 ): Promise<{ id: string }> {
-  // TODO: Replace total_count and quantity with your plan config
+  // total_count=12 means 12 billing cycles (1 year for monthly plans).
+  // Update this and quantity when finalizing plan config in the Razorpay dashboard.
   const res = await razorpayFetch("/subscriptions", {
     method: "POST",
     body: JSON.stringify({
       plan_id: planId,
-      total_count: 12, // 12 billing cycles
+      total_count: 12,
       quantity: 1,
       notes: { clerk_user_id: clerkUserId },
     }),
@@ -55,7 +57,8 @@ export async function createSubscription(
 }
 
 export function verifyWebhookSignature(body: string, signature: string): boolean {
-  // TODO: Set RAZORPAY_WEBHOOK_SECRET in your environment variables
+  // Requires RAZORPAY_WEBHOOK_SECRET — set this in env vars from
+  // Razorpay dashboard → Settings → Webhooks → Secret.
   const secret = process.env.RAZORPAY_WEBHOOK_SECRET ?? "";
   const expected = crypto.createHmac("sha256", secret).update(body).digest("hex");
   return expected === signature;

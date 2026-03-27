@@ -36,25 +36,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // Filename + content-type come as headers — body is raw file stream
   const filename = request.headers.get("x-filename") ?? "upload.mp4";
   const contentType = request.headers.get("content-type") ?? "video/mp4";
-  const ext = filename.split(".").pop() ?? "mp4";
-  const key = `uploads/${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
   if (!request.body) {
     return Response.json({ error: "No file body" }, { status: 400 });
   }
 
-  // Stream directly to R2 using multipart upload — no 4MB limit
-  const upload = new Upload({
-    client: r2Client,
-    params: {
-      Bucket: R2_BUCKET,
-      Key: key,
-      Body: request.body as unknown as ReadableStream,
-      ContentType: contentType,
-    },
-  });
-
-  await upload.done();
+  const key = await streamToR2(request.body, userId, filename, contentType);
 
   // Save r2_key to project
   const { error: updateError } = await supabaseAdmin
@@ -67,4 +54,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   return Response.json({ key }, { status: 200 });
+}
+
+async function streamToR2(
+  body: ReadableStream,
+  userId: string,
+  filename: string,
+  contentType: string
+): Promise<string> {
+  const ext = filename.split(".").pop() ?? "mp4";
+  const key = `uploads/${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const upload = new Upload({
+    client: r2Client,
+    params: {
+      Bucket: R2_BUCKET,
+      Key: key,
+      Body: body as unknown as ReadableStream,
+      ContentType: contentType,
+    },
+  });
+  await upload.done();
+  return key;
 }
