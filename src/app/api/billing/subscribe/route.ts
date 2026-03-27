@@ -3,12 +3,13 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getSupabaseUserId } from "@/lib/user";
 import { createCustomer, createSubscription } from "@/lib/razorpay";
 
-type ValidPlan = "starter" | "pro";
+type ValidPlan = "starter" | "pro" | "unlimited";
 
 function getPlanId(plan: ValidPlan): string {
   const ids: Record<ValidPlan, string> = {
     starter: process.env.RAZORPAY_STARTER_PLAN_ID ?? "",
     pro: process.env.RAZORPAY_PRO_PLAN_ID ?? "",
+    unlimited: process.env.RAZORPAY_UNLIMITED_PLAN_ID ?? "",
   };
   return ids[plan];
 }
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
 
   const body = await request.json();
   const plan = body.plan as string;
-  if (plan !== "starter" && plan !== "pro") {
+  if (plan !== "starter" && plan !== "pro" && plan !== "unlimited") {
     return Response.json({ error: "Invalid plan" }, { status: 400 });
   }
 
