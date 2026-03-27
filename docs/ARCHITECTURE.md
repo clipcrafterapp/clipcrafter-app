@@ -289,3 +289,9 @@ TRANSCRIPTION_PROVIDER=sarvam
 All API keys and secrets: `~/Desktop/ToolNexus-Credentials.md`
 
 Local env: `~/dev/toolnexus-app/.env.local`
+
+## Monitoring
+- **PostHog** (us.posthog.com) — frontend analytics, session replay, error capture
+  - Account: clipcrafterapp@gmail.com
+  - Key: NEXT_PUBLIC_POSTHOG_KEY in .env.local / Vercel
+  - Events tracked: project_created, project_create_failed, export_started, clips_generated, pageviews
