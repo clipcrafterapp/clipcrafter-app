@@ -53,7 +53,8 @@ async function submitUploadFile(file: File, ctx: SubmitContext): Promise<void> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: file.name, type: "upload" }),
     });
-    if (!createRes.ok) throw new Error("Failed to create project");
+    const createBody = await createRes.json().catch(() => ({}));
+    if (!createRes.ok) throw new Error(createBody.error || "Failed to create project");
     const { id } = await createRes.json();
 
     ctx.setStep("uploading");
@@ -102,7 +103,8 @@ async function submitYoutubeUrl(youtubeUrl: string, ctx: SubmitContext): Promise
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, type: "youtube", youtubeUrl: url }),
     });
-    if (!createRes.ok) throw new Error("Failed to create project");
+    const createBody = await createRes.json().catch(() => ({}));
+    if (!createRes.ok) throw new Error(createBody.error || "Failed to create project");
     const { id } = await createRes.json();
 
     ctx.setStep("processing");
