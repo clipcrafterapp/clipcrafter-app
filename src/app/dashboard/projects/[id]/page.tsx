@@ -7,6 +7,7 @@ import { useProjectData } from "@/components/project/useProjectData";
 import { ProcessingStatus } from "@/components/project/ProcessingStatus";
 import { PlayerSection } from "@/components/project/PlayerSection";
 import { CompletedSidebar } from "@/components/project/CompletedSidebar";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Clip, Segment, TERMINAL_STATUSES } from "@/components/project/types";
 import type { GraphNode, GraphSegment, GraphEdge, VideoGraph } from "@/lib/video-graph";
 
@@ -356,7 +357,9 @@ function SidebarContent({
         />
       )}
       {isCompleted && (
-        <CompletedSidebarWrapper p={p} sortedClips={sortedClips} computedGraph={computedGraph} />
+        <ErrorBoundary>
+          <CompletedSidebarWrapper p={p} sortedClips={sortedClips} computedGraph={computedGraph} />
+        </ErrorBoundary>
       )}
     </>
   );
@@ -397,40 +400,42 @@ export function ProjectDetailContent({ id }: { id: string }) {
           </div>
         </aside>
         <main className="flex-1 flex flex-col min-w-0 lg:sticky lg:top-0 lg:h-screen">
-          <PlayerSection
-            isCompleted={!!isCompleted}
-            artifacts={p.artifacts}
-            videoUrl={p.videoUrl}
-            isYouTube={p.isYouTube}
-            youTubeVideoId={p.youTubeVideoId}
-            videoRef={p.videoRef}
-            timelineRef={p.timelineRef}
-            sortedClips={sortedClips}
-            selectedClipId={p.selectedClipId}
-            clips={p.clips}
-            duration={p.duration}
-            currentTime={p.currentTime}
-            isPlaying={p.isPlaying}
-            isLooping={p.isLooping}
-            isPreviewing={p.isPreviewing}
-            showCaptions={p.showCaptions}
-            captionText={captionText}
-            selectedClip={selectedClip}
-            onTimeUpdate={p.handleTimeUpdate}
-            onLoadedMetadata={p.handleLoadedMetadata}
-            onSetIsPlaying={p.setIsPlaying}
-            onTimelineClick={p.handleTimelineClick}
-            onHandleMouseDown={p.handleHandleMouseDown}
-            onTogglePlay={p.togglePlay}
-            onSkipPrev={p.skipPrev}
-            onSkipNext={p.skipNext}
-            onToggleLoop={() => p.setIsLooping((l) => !l)}
-            onPlayAll={p.handlePlayAll}
-            onStopPreviewing={p.stopPreviewing}
-            onToggleCaptions={() => p.setShowCaptions((c) => !c)}
-            onSetSelectedClipId={p.setSelectedClipId}
-            onSeekToClip={p.seekToClip}
-          />
+          <ErrorBoundary>
+            <PlayerSection
+              isCompleted={!!isCompleted}
+              artifacts={p.artifacts}
+              videoUrl={p.videoUrl}
+              isYouTube={p.isYouTube}
+              youTubeVideoId={p.youTubeVideoId}
+              videoRef={p.videoRef}
+              timelineRef={p.timelineRef}
+              sortedClips={sortedClips}
+              selectedClipId={p.selectedClipId}
+              clips={p.clips}
+              duration={p.duration}
+              currentTime={p.currentTime}
+              isPlaying={p.isPlaying}
+              isLooping={p.isLooping}
+              isPreviewing={p.isPreviewing}
+              showCaptions={p.showCaptions}
+              captionText={captionText}
+              selectedClip={selectedClip}
+              onTimeUpdate={p.handleTimeUpdate}
+              onLoadedMetadata={p.handleLoadedMetadata}
+              onSetIsPlaying={p.setIsPlaying}
+              onTimelineClick={p.handleTimelineClick}
+              onHandleMouseDown={p.handleHandleMouseDown}
+              onTogglePlay={p.togglePlay}
+              onSkipPrev={p.skipPrev}
+              onSkipNext={p.skipNext}
+              onToggleLoop={() => p.setIsLooping((l) => !l)}
+              onPlayAll={p.handlePlayAll}
+              onStopPreviewing={p.stopPreviewing}
+              onToggleCaptions={() => p.setShowCaptions((c) => !c)}
+              onSetSelectedClipId={p.setSelectedClipId}
+              onSeekToClip={p.seekToClip}
+            />
+          </ErrorBoundary>
         </main>
       </div>
     </div>
