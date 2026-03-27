@@ -44,6 +44,40 @@ interface SubmitContext {
   router: ReturnType<typeof useRouter>;
 }
 
+/** Upload file directly to R2 via presigned URL (3-step: get URL → PUT → confirm). */
+async function uploadFileToR2(projectId: string, file: File): Promise<void> {
+  // Step 1: Get presigned upload URL
+  const urlRes = await fetch(`/api/projects/${projectId}/upload-url`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: file.name, contentType: file.type || "video/mp4" }),
+  });
+  if (!urlRes.ok) {
+    const urlBody = await urlRes.json().catch(() => ({}));
+    throw new Error((urlBody as { error?: string }).error || "Failed to get upload URL");
+  }
+  const { uploadUrl, key } = (await urlRes.json()) as { uploadUrl: string; key: string };
+
+  // Step 2: Upload directly to R2 (no Vercel size limit)
+  const uploadRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": file.type || "video/mp4" },
+    body: file,
+  });
+  if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
+
+  // Step 3: Confirm upload — save key to DB
+  const confirmRes = await fetch(`/api/projects/${projectId}/upload-confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key }),
+  });
+  if (!confirmRes.ok) {
+    const confirmBody = await confirmRes.json().catch(() => ({}));
+    throw new Error((confirmBody as { error?: string }).error || "Failed to confirm upload");
+  }
+}
+
 async function submitUploadFile(file: File, ctx: SubmitContext): Promise<void> {
   ctx.setStep("creating");
   ctx.setErrorMsg("");
@@ -58,21 +92,7 @@ async function submitUploadFile(file: File, ctx: SubmitContext): Promise<void> {
     const { id } = createBody;
 
     ctx.setStep("uploading");
-    // Stream raw file to API — server forwards to R2 (no CORS, no 4MB limit)
-    const uploadRes = await fetch(`/api/projects/${id}/upload`, {
-      method: "POST",
-      headers: {
-        "content-type": file.type || "video/mp4",
-        "x-filename": file.name,
-      },
-      body: file,
-      // @ts-expect-error — duplex required for streaming in some environments
-      duplex: "half",
-    });
-    if (!uploadRes.ok) {
-      const body = await uploadRes.text();
-      throw new Error(`Upload failed: ${uploadRes.status} ${body}`);
-    }
+    await uploadFileToR2(id, file);
 
     ctx.setStep("processing");
     const processRes = await fetch(`/api/projects/${id}/process`, { method: "POST" });
