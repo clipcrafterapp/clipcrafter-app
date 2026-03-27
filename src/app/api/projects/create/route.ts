@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getSupabaseUserId } from "@/lib/user";
+import { captureServerError } from "@/lib/posthog-server";
 
 /**
  * Normalize a YouTube URL to a canonical video ID form: https://www.youtube.com/watch?v=ID
@@ -139,6 +140,15 @@ export async function POST(request: Request) {
     .single();
 
   if (error) {
+    console.error("[create-project] Supabase insert error:", {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      userId,
+      supabaseUserId,
+    });
+    await captureServerError(error, { userId, supabaseUserId, route: "create-project" });
     return Response.json({ error: error.message }, { status: 500 });
   }
 

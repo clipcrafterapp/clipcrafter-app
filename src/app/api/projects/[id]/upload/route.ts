@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { r2Client, R2_BUCKET } from "@/lib/r2";
 import { getSupabaseUserId } from "@/lib/user";
 import { Upload } from "@aws-sdk/lib-storage";
+import { captureServerError } from "@/lib/posthog-server";
 
 export const runtime = "nodejs";
 export const maxDuration = 300; // 5 min for large files
@@ -50,6 +51,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .eq("id", id);
 
   if (updateError) {
+    await captureServerError(updateError, { userId, supabaseUserId, route: "upload-project", projectId: id });
     return Response.json({ error: updateError.message }, { status: 500 });
   }
 

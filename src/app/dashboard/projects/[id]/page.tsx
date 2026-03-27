@@ -7,6 +7,7 @@ import { useProjectData } from "@/components/project/useProjectData";
 import { ProcessingStatus } from "@/components/project/ProcessingStatus";
 import { PlayerSection } from "@/components/project/PlayerSection";
 import { CompletedSidebar } from "@/components/project/CompletedSidebar";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Clip, Segment, TERMINAL_STATUSES } from "@/components/project/types";
 import type { GraphNode, GraphSegment, GraphEdge, VideoGraph } from "@/lib/video-graph";
 
@@ -356,7 +357,9 @@ function SidebarContent({
         />
       )}
       {isCompleted && (
-        <CompletedSidebarWrapper p={p} sortedClips={sortedClips} computedGraph={computedGraph} />
+        <ErrorBoundary>
+          <CompletedSidebarWrapper p={p} sortedClips={sortedClips} computedGraph={computedGraph} />
+        </ErrorBoundary>
       )}
     </>
   );
@@ -397,6 +400,7 @@ export function ProjectDetailContent({ id }: { id: string }) {
           </div>
         </aside>
         <main className="flex-1 flex flex-col min-w-0 lg:sticky lg:top-0 lg:h-screen">
+          <ErrorBoundary>
           <PlayerSection
             isCompleted={!!isCompleted}
             artifacts={p.artifacts}
