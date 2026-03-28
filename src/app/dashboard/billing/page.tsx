@@ -20,7 +20,8 @@ const PLANS = [
   {
     key: "starter" as const,
     name: "Starter",
-    price: "₹999",
+    price: "₹9",
+    originalPrice: "₹999",
     features: [
       "5 hrs/month processing",
       "Unlimited projects",
@@ -31,7 +32,8 @@ const PLANS = [
   {
     key: "pro" as const,
     name: "Pro",
-    price: "₹2,499",
+    price: "₹90",
+    originalPrice: "₹2,499",
     features: [
       "20 hrs/month processing",
       "Unlimited projects",
@@ -39,11 +41,24 @@ const PLANS = [
       "Priority support",
     ],
   },
+  {
+    key: "unlimited" as const,
+    name: "Unlimited",
+    price: "₹999",
+    originalPrice: "₹9,999",
+    features: [
+      "Unlimited processing",
+      "Unlimited projects",
+      "Fastest processing",
+      "Dedicated support",
+    ],
+  },
 ];
 
 function PlanCard({
   name,
   price,
+  originalPrice,
   features,
   planKey,
   isCurrent,
@@ -52,10 +67,11 @@ function PlanCard({
 }: {
   name: string;
   price: string;
+  originalPrice?: string;
   features: string[];
-  planKey: "starter" | "pro";
+  planKey: "starter" | "pro" | "unlimited";
   isCurrent: boolean;
-  onSubscribe: (plan: "starter" | "pro") => void;
+  onSubscribe: (plan: "starter" | "pro" | "unlimited") => void;
   loading: boolean;
 }) {
   return (
@@ -66,10 +82,20 @@ function PlanCard({
     >
       <div>
         <h2 className="text-xl font-bold">{name}</h2>
-        <p className="text-3xl font-bold mt-1">
-          {price}
-          <span className="text-sm font-normal text-gray-400">/mo</span>
-        </p>
+        <div className="mt-1 flex items-baseline gap-2">
+          <p className="text-3xl font-bold">
+            {price}
+            <span className="text-sm font-normal text-gray-400">/mo</span>
+          </p>
+          {originalPrice && (
+            <span className="text-sm text-gray-500 line-through">{originalPrice}/mo</span>
+          )}
+        </div>
+        {originalPrice && (
+          <span className="inline-block mt-1 text-xs font-semibold text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
+            Alpha pricing until June 2026
+          </span>
+        )}
       </div>
       <ul className="flex-1 space-y-2">
         {features.map((f) => (
@@ -124,7 +150,7 @@ type RazorpayUser = {
 };
 
 async function startRazorpayCheckout(
-  plan: "starter" | "pro",
+  plan: "starter" | "pro" | "unlimited",
   user: RazorpayUser,
   onDismiss: () => void
 ) {
@@ -140,7 +166,12 @@ async function startRazorpayCheckout(
     key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
     subscription_id: subscriptionId,
     name: "ClipCrafter",
-    description: plan === "pro" ? "Pro Plan — ₹2,499/month" : "Starter Plan — ₹999/month",
+    description:
+      plan === "unlimited"
+        ? "Unlimited Plan — ₹9,999/month"
+        : plan === "pro"
+          ? "Pro Plan — ₹2,499/month"
+          : "Starter Plan — ₹999/month",
     image: "/favicon.ico",
     prefill: {
       name: user.fullName ?? "",
@@ -183,7 +214,7 @@ export default function BillingPage() {
   const { billing, loading } = useBilling();
   const [subscribing, setSubscribing] = useState(false);
 
-  async function handleSubscribe(plan: "starter" | "pro") {
+  async function handleSubscribe(plan: "starter" | "pro" | "unlimited") {
     if (!user) return;
     setSubscribing(true);
     try {
@@ -208,12 +239,13 @@ export default function BillingPage() {
       <div className="min-h-screen bg-gray-950 text-white">
         <div className="max-w-4xl mx-auto px-4 py-12">
           <BillingHeader billing={billing} />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {PLANS.map((p) => (
               <PlanCard
                 key={p.key}
                 name={p.name}
                 price={p.price}
+                originalPrice={p.originalPrice}
                 features={p.features}
                 planKey={p.key}
                 isCurrent={billing?.plan === p.key}
