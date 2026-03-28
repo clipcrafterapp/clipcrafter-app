@@ -156,14 +156,33 @@ export default function StudioPage() {
       </div>
       {/* Sticky export bar — mobile only, shown when clips are selected */}
       {selectedCount > 0 && (
-        <div className="lg:hidden fixed bottom-16 left-0 right-0 px-4 py-3 bg-gray-950 border-t border-gray-800 z-20">
-          <button
-            type="button"
-            onClick={p.handleExportBatch}
-            className="w-full py-3 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors"
-          >
-            Export {selectedCount} clip{selectedCount !== 1 ? "s" : ""}
-          </button>
+        <div className="lg:hidden fixed bottom-16 left-0 right-0 px-4 py-3 bg-gray-950 border-t border-gray-800 z-20 flex gap-2">
+          {selectedCount > 1 ? (
+            <>
+              <button
+                type="button"
+                onClick={p.handleStitchExport}
+                className="flex-1 py-3 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors"
+              >
+                Stitch & Export ({selectedCount})
+              </button>
+              <button
+                type="button"
+                onClick={p.handleExportBatch}
+                className="px-4 py-3 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium transition-colors"
+              >
+                Individual
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={p.handleExportBatch}
+              className="flex-1 py-3 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors"
+            >
+              Export clip
+            </button>
+          )}
         </div>
       )}
     </div>
