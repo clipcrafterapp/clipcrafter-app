@@ -22,20 +22,6 @@ const TIERS: Tier[] = [
     highlighted: false,
   },
   {
-    name: "Free Trial",
-    price: "₹0",
-    description: "Try everything free for 30 days.",
-    features: [
-      "Unlimited processing for 30 days",
-      "All highlights & clips",
-      "Full export options",
-      "No credit card required",
-    ],
-    cta: "Start Free Trial",
-    ctaAction: "start-trial",
-    highlighted: true,
-  },
-  {
     name: "Starter",
     price: "₹9/mo",
     originalPrice: "₹999/mo",
@@ -45,9 +31,10 @@ const TIERS: Tier[] = [
       "Unlimited projects",
       "Priority processing",
       "Email support",
+      "30-day free trial",
     ],
-    cta: "Coming Soon",
-    ctaDisabled: true,
+    cta: "Start Free Trial",
+    ctaAction: "subscribe-starter",
     highlighted: false,
   },
   {
@@ -60,9 +47,26 @@ const TIERS: Tier[] = [
       "Unlimited projects",
       "Fastest processing",
       "Priority support",
+      "30-day free trial",
     ],
-    cta: "Coming Soon",
-    ctaDisabled: true,
+    cta: "Start Free Trial",
+    ctaAction: "subscribe-pro",
+    highlighted: true,
+  },
+  {
+    name: "Unlimited",
+    price: "₹999/mo",
+    originalPrice: "₹9,999/mo",
+    description: "For power teams with no limits.",
+    features: [
+      "Unlimited processing",
+      "Unlimited projects",
+      "Fastest processing",
+      "Dedicated support",
+      "30-day free trial",
+    ],
+    cta: "Start Free Trial",
+    ctaAction: "subscribe-unlimited",
     highlighted: false,
   },
 ];
@@ -105,15 +109,17 @@ function PricingCard({ tier }: { tier: Tier }) {
 function TierCTA({ tier }: { tier: Tier }) {
   const btnClass =
     "block text-center rounded-lg px-4 py-2.5 text-sm font-semibold bg-violet-600 hover:bg-violet-500 transition-colors";
-  if (tier.ctaAction === "start-trial") {
-    return (
-      <a href="/dashboard" className={btnClass}>
-        Start Free Trial
-      </a>
-    );
-  }
-  if (tier.ctaAction === "subscribe-starter" || tier.ctaAction === "subscribe-pro") {
-    const plan = tier.ctaAction === "subscribe-pro" ? "pro" : "starter";
+  if (
+    tier.ctaAction === "subscribe-starter" ||
+    tier.ctaAction === "subscribe-pro" ||
+    tier.ctaAction === "subscribe-unlimited"
+  ) {
+    const plan =
+      tier.ctaAction === "subscribe-pro"
+        ? "pro"
+        : tier.ctaAction === "subscribe-unlimited"
+          ? "unlimited"
+          : "starter";
     return (
       <a href={`/dashboard/billing?plan=${plan}`} className={btnClass}>
         {tier.cta}
@@ -138,12 +144,13 @@ function TierCTA({ tier }: { tier: Tier }) {
 export default function PricingPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
-      <div className="max-w-5xl mx-auto px-4 py-16">
+      <div className="max-w-6xl mx-auto px-4 py-16">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold mb-4">Simple, transparent pricing</h1>
           <p className="text-gray-400 text-lg">All prices in INR. Powered by Razorpay.</p>
           <p className="text-gray-500 text-sm mt-2">
-            Note: Alpha pricing until June 2026. Secure payments via Razorpay. Cancel anytime.
+            All paid plans include a 30-day free trial. Alpha pricing until June 2026. Cancel
+            anytime.
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">

@@ -9,6 +9,7 @@ export const PLAN_LIMITS: Record<string, number> = {
   trial: Infinity,
   starter: 18000, // 5 hrs/month
   pro: 72000, // 20 hrs/month
+  unlimited: Infinity, // no limits
 };
 
 const ALPHA_DAILY_LIMIT_SECONDS = 7200; // 2 hrs/day
