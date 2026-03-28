@@ -303,26 +303,25 @@ function SkippedList({ clips, onRestore }: { clips: Clip[]; onRestore: (id: stri
   );
 }
 
-function useAutoDownload(clips: Clip[] | null, onOpenDownloads?: () => void) {
+function useExportReadyToast(clips: Clip[] | null) {
   const prevClipsRef = useRef<Clip[]>([]);
   useEffect(() => {
     if (!clips) return;
     clips.forEach((clip) => {
       const prev = prevClipsRef.current.find((c) => c.id === clip.id);
-      if (prev?.status !== "exported" && clip.status === "exported" && clip.export_url) {
-        triggerDownload(clip.id, `${clip.clip_title ?? "clip"}.mp4`);
+      if (prev?.status !== "exported" && clip.status === "exported") {
+        // Just notify — no auto-download
         toast.success("Clip ready!", {
           description: clip.clip_title ?? "Your clip has been exported",
           action: {
-            label: "Download again",
+            label: "Download",
             onClick: () => triggerDownload(clip.id, `${clip.clip_title ?? "clip"}.mp4`),
           },
         });
-        onOpenDownloads?.();
       }
     });
     prevClipsRef.current = clips;
-  }, [clips, onOpenDownloads]);
+  }, [clips]);
 }
 
 type ClipBodyProps = {
@@ -411,7 +410,7 @@ export function ClipListView(props: ClipListViewProps) {
   const { sortedClips, selectedTopic, clipsStatus, clips, onSetSelectedTopic, onOpenDownloads } =
     props;
   const [activeTab, setActiveTab] = useState<"clips" | "skipped">("clips");
-  useAutoDownload(clips, onOpenDownloads);
+  useExportReadyToast(clips);
 
   const regularClips = sortedClips.filter((c) => c.status !== "rejected");
   const skippedClips = sortedClips.filter((c) => c.status === "rejected");
