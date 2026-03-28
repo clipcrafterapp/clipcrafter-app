@@ -30,9 +30,8 @@ function ClipExportControl({ clip, onExport }: { clip: Clip; onExport: (clipId: 
   if (clip.status === "exported" && clip.export_url) {
     return (
       <a
-        href={clip.export_url}
-        target="_blank"
-        rel="noreferrer"
+        href={`/api/clips/${clip.id}/download`}
+        download={`${clip.clip_title ?? clip.title ?? "clip"}.mp4`}
         onClick={(e) => e.stopPropagation()}
         className="ml-auto px-3 py-1.5 bg-green-700 hover:bg-green-600 rounded-lg text-xs font-semibold text-white transition-colors min-h-[44px] flex items-center"
       >

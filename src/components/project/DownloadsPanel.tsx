@@ -9,10 +9,19 @@ export interface DownloadsPanelProps {
   stitchUrl?: string | null;
 }
 
-function DownloadButton({ href, label }: { href: string; label: string }) {
+function DownloadButton({
+  clipId,
+  href,
+  label,
+}: {
+  clipId?: string;
+  href?: string;
+  label: string;
+}) {
+  const url = clipId ? `/api/clips/${clipId}/download` : (href ?? "#");
   return (
     <a
-      href={href}
+      href={url}
       download={`${label}.mp4`}
       className="flex items-center gap-1.5 px-3 py-1.5 bg-green-700 hover:bg-green-600 rounded-lg text-xs font-semibold text-white transition-colors min-h-[36px] shrink-0"
       aria-label={`Download ${label}`}
@@ -85,7 +94,7 @@ export function DownloadsPanel({ clips, projectTitle, stitchUrl }: DownloadsPane
                       <p className="text-sm text-white font-medium truncate">{name}</p>
                       <p className="text-xs text-gray-400">{dur}s</p>
                     </div>
-                    <DownloadButton href={clip.export_url!} label={name} />
+                    <DownloadButton clipId={clip.id} label={name} />
                   </article>
                 </li>
               );

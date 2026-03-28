@@ -204,9 +204,11 @@ function ExportBar({
   );
 }
 
-function triggerDownload(url: string, filename: string) {
+function triggerDownload(clipId: string, filename: string) {
+  // Use a proxy API route so mobile Safari downloads instead of opening inline
+  // (the `download` attribute is ignored for cross-origin URLs on iOS)
   const a = document.createElement("a");
-  a.href = url;
+  a.href = `/api/clips/${clipId}/download`;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
@@ -308,12 +310,12 @@ function useAutoDownload(clips: Clip[] | null, onOpenDownloads?: () => void) {
     clips.forEach((clip) => {
       const prev = prevClipsRef.current.find((c) => c.id === clip.id);
       if (prev?.status !== "exported" && clip.status === "exported" && clip.export_url) {
-        triggerDownload(clip.export_url, `${clip.clip_title ?? "clip"}.mp4`);
+        triggerDownload(clip.id, `${clip.clip_title ?? "clip"}.mp4`);
         toast.success("Clip ready!", {
           description: clip.clip_title ?? "Your clip has been exported",
           action: {
             label: "Download again",
-            onClick: () => triggerDownload(clip.export_url!, `${clip.clip_title ?? "clip"}.mp4`),
+            onClick: () => triggerDownload(clip.id, `${clip.clip_title ?? "clip"}.mp4`),
           },
         });
         onOpenDownloads?.();
