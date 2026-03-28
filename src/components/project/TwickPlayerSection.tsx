@@ -20,12 +20,7 @@ function Spinner() {
         stroke="currentColor"
       >
         <circle cx="12" cy="12" r="10" strokeWidth="4" className="opacity-25" />
-        <path
-          strokeLinecap="round"
-          d="M4 12a8 8 0 018-8"
-          strokeWidth="4"
-          className="opacity-75"
-        />
+        <path strokeLinecap="round" d="M4 12a8 8 0 018-8" strokeWidth="4" className="opacity-75" />
       </svg>
     </div>
   );

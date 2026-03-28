@@ -69,9 +69,7 @@ export default function TwickTestPage() {
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
       <div className="px-6 py-4 border-b border-gray-800 flex items-center gap-4">
         <h1 className="text-lg font-semibold">Twick spike — /twick-test</h1>
-        <span className="text-xs text-gray-500 font-mono truncate max-w-xs">
-          {TEST_VIDEO_URL}
-        </span>
+        <span className="text-xs text-gray-500 font-mono truncate max-w-xs">{TEST_VIDEO_URL}</span>
       </div>
 
       <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>

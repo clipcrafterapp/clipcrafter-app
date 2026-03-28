@@ -190,8 +190,7 @@ export default function TwickPlayerInner({
             displayDuration > 0 &&
             sortedClips.map((clip) => {
               const left = (clip.start_sec / displayDuration) * 100;
-              const width =
-                ((clip.end_sec - clip.start_sec) / displayDuration) * 100;
+              const width = ((clip.end_sec - clip.start_sec) / displayDuration) * 100;
               const isSel = clip.id === selectedClipId;
               return (
                 <div
