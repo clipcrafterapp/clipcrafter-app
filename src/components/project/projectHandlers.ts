@@ -179,16 +179,35 @@ interface ExportBatchArgs {
 export function makeHandleExportBatch(
   id: string,
   getArgs: () => ExportBatchArgs,
-  setClips: React.Dispatch<React.SetStateAction<Clip[] | null>>
+  setClips: React.Dispatch<React.SetStateAction<Clip[] | null>>,
+  getAllClips: () => Clip[] | null
 ) {
   return async function handleExportBatch() {
     const { selectedClipIds, withCaptions } = getArgs();
-    const clipIds = [...selectedClipIds];
-    if (clipIds.length === 0) {
+    if (selectedClipIds.size === 0) {
       toast.warning("Select at least one clip to export");
       return;
     }
-    posthog.capture("export_started", { clipCount: selectedClipIds.size, withCaptions });
+
+    // Only queue clips that are in a state eligible for export
+    const allClips = getAllClips() ?? [];
+    const eligibleStatuses: Clip["status"][] = ["pending", "approved"];
+    const clipIds = [...selectedClipIds].filter((clipId) => {
+      const clip = allClips.find((c) => c.id === clipId);
+      return clip && eligibleStatuses.includes(clip.status);
+    });
+    const skippedCount = selectedClipIds.size - clipIds.length;
+
+    if (clipIds.length === 0) {
+      toast.info(
+        skippedCount === 1
+          ? "That clip is already exported or exporting"
+          : `All ${skippedCount} clips are already exported or exporting`
+      );
+      return;
+    }
+
+    posthog.capture("export_started", { clipCount: clipIds.length, withCaptions });
     const toastId = toast.loading(
       `Queuing ${clipIds.length} clip${clipIds.length > 1 ? "s" : ""} for export…`
     );
@@ -198,18 +217,22 @@ export function makeHandleExportBatch(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clipIds, withCaptions }),
       });
-      if (res.ok) {
-        toast.success(`${clipIds.length} clip${clipIds.length > 1 ? "s" : ""} queued for export`, {
-          id: toastId,
-        });
-        setClips(
-          (prev) =>
-            prev?.map((c) => (selectedClipIds.has(c.id) ? { ...c, status: "exporting" } : c)) ??
-            null
-        );
-      } else {
+      if (!res.ok) {
         toast.error("Failed to queue exports", { id: toastId });
+        return;
       }
+      const queued = clipIds.length;
+      const suffix = queued > 1 ? "s" : "";
+      const successMsg =
+        skippedCount > 0
+          ? `${queued} clip${suffix} queued — ${skippedCount} already exported/exporting, skipped`
+          : `${queued} clip${suffix} queued for export`;
+      toast.success(successMsg, { id: toastId });
+      const clipIdSet = new Set(clipIds);
+      setClips(
+        (prev) =>
+          prev?.map((c) => (clipIdSet.has(c.id) ? { ...c, status: "exporting" } : c)) ?? null
+      );
     } catch {
       toast.error("Network error — please try again", { id: toastId });
     }

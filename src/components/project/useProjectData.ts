@@ -62,6 +62,7 @@ interface ProjectHandlerOpts {
   setClips: React.Dispatch<React.SetStateAction<Clip[] | null>>;
   setClipsStatus: React.Dispatch<React.SetStateAction<string>>;
   setSelectedTopic: (t: string | null) => void;
+  getClips: () => Clip[] | null;
   s: Pick<
     ProjectState,
     "clipCount" | "clipPrompt" | "clipTargetDuration" | "selectedClipIds" | "withCaptions"
@@ -69,7 +70,8 @@ interface ProjectHandlerOpts {
 }
 
 function buildProjectHandlers(opts: ProjectHandlerOpts) {
-  const { id, setLoading, fetchStatus, setClips, setClipsStatus, setSelectedTopic, s } = opts;
+  const { id, setLoading, fetchStatus, setClips, setClipsStatus, setSelectedTopic, getClips, s } =
+    opts;
   return {
     handleRetry: makeHandleRetry(id, { setLoading, fetchStatus }),
     handleDelete: makeHandleDelete(id),
@@ -87,7 +89,8 @@ function buildProjectHandlers(opts: ProjectHandlerOpts) {
     handleExportBatch: makeHandleExportBatch(
       id,
       () => ({ selectedClipIds: s.selectedClipIds, withCaptions: s.withCaptions }),
-      setClips
+      setClips,
+      getClips
     ),
     handleStitchExport: makeHandleStitchExport(id, () => ({
       selectedClipIds: s.selectedClipIds,
@@ -268,6 +271,7 @@ export function useProjectData(id: string): ProjectDataResult {
     setClips,
     setClipsStatus,
     setSelectedTopic,
+    getClips: () => clipsRef.current,
     s,
   });
   const videoHandlers = buildVideoHandlers({ s, lr, clips, setClips, setSelectedClipId });
