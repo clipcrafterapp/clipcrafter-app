@@ -25,14 +25,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const body = await request.json();
   const filename = body.filename ?? "upload.mp4";
-  const contentType = body.contentType ?? "video/mp4";
   const ext = filename.split(".").pop() ?? "mp4";
   const key = `uploads/${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
   const command = new PutObjectCommand({
     Bucket: R2_BUCKET,
     Key: key,
-    ContentType: contentType,
+    // Do NOT include ContentType here — signing it forces the PUT to use the exact same
+    // Content-Type header or R2 returns 403. The browser may report a different MIME type
+    // than what was sent here (e.g. empty string vs video/mp4 vs video/quicktime).
+    // R2 accepts uploads without a signed Content-Type constraint.
   });
 
   const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
