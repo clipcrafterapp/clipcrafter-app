@@ -17,11 +17,11 @@ function TopicFilterChips({
   const topics = [...new Set((clips ?? []).map((c) => c.topic).filter(Boolean) as string[])];
   if (topics.length < 2) return null;
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
       <button
         type="button"
         onClick={() => onSetSelectedTopic(null)}
-        className={`text-xs px-3 py-1.5 rounded-full border transition-colors min-h-[32px] ${selectedTopic === null ? "bg-violet-600 border-violet-600 text-white" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"}`}
+        className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors min-h-[32px] ${selectedTopic === null ? "bg-violet-600 border-violet-600 text-white" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"}`}
       >
         All ({clips?.length})
       </button>
@@ -32,7 +32,7 @@ function TopicFilterChips({
             key={t}
             type="button"
             onClick={() => onSetSelectedTopic(selectedTopic === t ? null : t)}
-            className={`text-xs px-3 py-1.5 rounded-full border transition-colors min-h-[32px] ${selectedTopic === t ? "bg-violet-600 border-violet-600 text-white" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"}`}
+            className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors min-h-[32px] ${selectedTopic === t ? "bg-violet-600 border-violet-600 text-white" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"}`}
           >
             {t} ({count})
           </button>
@@ -67,8 +67,22 @@ function ExportBar({
   onKeepAll: () => void;
   onStitchExport?: () => void;
 }) {
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const overflowRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!overflowOpen) return;
+    function handleOutside(e: MouseEvent) {
+      if (overflowRef.current && !overflowRef.current.contains(e.target as Node)) {
+        setOverflowOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [overflowOpen]);
+
   return (
-    <div className="sticky top-0 z-10 bg-gray-950 py-2 flex flex-wrap items-center gap-2 border-b border-gray-800 -mx-4 px-4">
+    <div className="sticky top-0 z-10 bg-gray-950 py-2 flex items-center gap-2 border-b border-gray-800 -mx-4 px-4">
       <button
         type="button"
         onClick={() => {
@@ -77,7 +91,7 @@ function ExportBar({
         }}
         className="px-3 py-1 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:text-white transition-colors min-h-[30px]"
       >
-        {selectedClipIds.size === sortedClips.length ? "Deselect All" : "Select All"}
+        Select All
       </button>
       <button
         type="button"
@@ -87,22 +101,41 @@ function ExportBar({
       >
         Keep All
       </button>
-      <button
-        type="button"
-        onClick={onToggleCaptions}
-        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors min-h-[30px] ${withCaptions ? "bg-green-700 text-green-100" : "bg-gray-700 text-gray-400"}`}
-      >
-        Caption: {withCaptions ? "ON" : "OFF"}
-      </button>
-      {onStitchExport && selectedClipIds.size > 1 && (
+      <div className="relative" ref={overflowRef}>
         <button
           type="button"
-          onClick={onStitchExport}
-          className="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-600 rounded-lg text-xs font-semibold text-white transition-colors min-h-[36px]"
+          onClick={() => setOverflowOpen((o) => !o)}
+          className="px-3 py-1 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:text-white transition-colors min-h-[30px]"
         >
-          Stitch & Export ({selectedClipIds.size})
+          •••
         </button>
-      )}
+        {overflowOpen && (
+          <div className="absolute left-0 top-full mt-1 z-20 bg-gray-900 border border-gray-700 rounded-lg shadow-lg min-w-[160px] overflow-hidden">
+            <button
+              type="button"
+              onClick={() => {
+                onToggleCaptions();
+                setOverflowOpen(false);
+              }}
+              className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-gray-800 transition-colors"
+            >
+              Caption: {withCaptions ? "ON" : "OFF"}
+            </button>
+            {onStitchExport && selectedClipIds.size > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  onStitchExport!();
+                  setOverflowOpen(false);
+                }}
+                className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-gray-800 transition-colors"
+              >
+                Stitch & Export ({selectedClipIds.size})
+              </button>
+            )}
+          </div>
+        )}
+      </div>
       <button
         type="button"
         onClick={onExportBatch}
@@ -112,7 +145,7 @@ function ExportBar({
         }
         className="ml-auto px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-white transition-colors min-h-[36px]"
       >
-        Export {selectedClipIds.size} clip{selectedClipIds.size !== 1 ? "s" : ""} ▶
+        Export {selectedClipIds.size}
       </button>
     </div>
   );

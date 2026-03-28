@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { Clip, StatusData, Artifact } from "./types";
 import { ClipListView } from "./ClipListView";
 import { GraphView } from "./GraphView";
@@ -82,36 +82,6 @@ function ViewToggle({
   );
 }
 
-function GenerateHeader({
-  clips,
-  clipsStatus,
-  onGenerateClips,
-}: {
-  clips: Clip[] | null;
-  clipsStatus: string;
-  onGenerateClips: () => void;
-}) {
-  const isGenerating = clipsStatus === "generating";
-  return (
-    <div className="flex items-center gap-3">
-      <h2 className="text-lg font-bold text-white flex-1">✨ AI Clips</h2>
-      {clips && clips.length > 0 && (
-        <span className="text-xs text-gray-400 bg-gray-800 px-2.5 py-1 rounded-full font-medium">
-          {clips.length} clips
-        </span>
-      )}
-      <button
-        type="button"
-        onClick={onGenerateClips}
-        disabled={isGenerating}
-        data-testid="generate-clips-btn"
-        className="px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-semibold text-white transition-colors min-h-[44px]"
-      >
-        {isGenerating ? "Generating…" : clips && clips.length > 0 ? "Regenerate" : "Generate Clips"}
-      </button>
-    </div>
-  );
-}
 
 function GenerateControls({
   clipCount,
@@ -322,22 +292,51 @@ function ClipView(props: ClipViewProps) {
 }
 
 function GenerateSection(p: CompletedSidebarProps) {
+  const hasClips = !!(p.clips && p.clips.length > 0);
+  const [settingsOpen, setSettingsOpen] = useState(!hasClips);
+  const isGenerating = p.clipsStatus === "generating";
+
   return (
     <>
-      <GenerateHeader
-        clips={p.clips}
-        clipsStatus={p.clipsStatus}
-        onGenerateClips={p.onGenerateClips}
-      />
-      <GenerateControls
-        clipCount={p.clipCount}
-        clipPrompt={p.clipPrompt}
-        clipTargetDuration={p.clipTargetDuration}
-        clipsStatus={p.clipsStatus}
-        onSetClipCount={p.onSetClipCount}
-        onSetClipPrompt={p.onSetClipPrompt}
-        onSetClipTargetDuration={p.onSetClipTargetDuration}
-      />
+      <div className="flex items-center gap-2">
+        <ViewToggle
+          viewMode={p.viewMode}
+          hasGraph={!!p.computedGraph}
+          onSwitchView={p.onSwitchView}
+        />
+        <div className="flex-1" />
+        {hasClips && (
+          <>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen((o) => !o)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-transparent text-gray-400 hover:text-white transition-colors min-h-[32px]"
+            >
+              ⚙ {settingsOpen ? "▴" : "▾"}
+            </button>
+            <button
+              type="button"
+              onClick={p.onGenerateClips}
+              disabled={isGenerating}
+              data-testid="generate-clips-btn"
+              className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-semibold text-white transition-colors min-h-[36px]"
+            >
+              {isGenerating ? "Generating…" : "Regenerate"}
+            </button>
+          </>
+        )}
+      </div>
+      {(!hasClips || settingsOpen) && (
+        <GenerateControls
+          clipCount={p.clipCount}
+          clipPrompt={p.clipPrompt}
+          clipTargetDuration={p.clipTargetDuration}
+          clipsStatus={p.clipsStatus}
+          onSetClipCount={p.onSetClipCount}
+          onSetClipPrompt={p.onSetClipPrompt}
+          onSetClipTargetDuration={p.onSetClipTargetDuration}
+        />
+      )}
       <ClipView
         clips={p.clips}
         sortedClips={p.sortedClips}
@@ -375,11 +374,6 @@ function GenerateSection(p: CompletedSidebarProps) {
 export function CompletedSidebar(p: CompletedSidebarProps) {
   return (
     <>
-      <ViewToggle
-        viewMode={p.viewMode}
-        hasGraph={!!p.computedGraph}
-        onSwitchView={p.onSwitchView}
-      />
       <GenerateSection {...p} />
       <CollapsibleSidebar
         data={p.data}
