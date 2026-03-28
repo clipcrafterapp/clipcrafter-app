@@ -20,7 +20,7 @@ const PLANS = [
   {
     key: "starter" as const,
     name: "Starter",
-    price: "₹999",
+    price: "₹9",
     features: [
       "5 hrs/month processing",
       "Unlimited projects",
@@ -31,7 +31,7 @@ const PLANS = [
   {
     key: "pro" as const,
     name: "Pro",
-    price: "₹2,499",
+    price: "₹90",
     features: [
       "20 hrs/month processing",
       "Unlimited projects",
@@ -44,6 +44,7 @@ const PLANS = [
 function PlanCard({
   name,
   price,
+  originalPrice,
   features,
   planKey,
   isCurrent,
@@ -53,6 +54,7 @@ function PlanCard({
   name: string;
   price: string;
   features: string[];
+  originalPrice?: string;
   planKey: "starter" | "pro";
   isCurrent: boolean;
   onSubscribe: (plan: "starter" | "pro") => void;
@@ -66,10 +68,20 @@ function PlanCard({
     >
       <div>
         <h2 className="text-xl font-bold">{name}</h2>
-        <p className="text-3xl font-bold mt-1">
-          {price}
-          <span className="text-sm font-normal text-gray-400">/mo</span>
-        </p>
+        <div className="mt-1 flex items-baseline gap-2">
+          <p className="text-3xl font-bold">
+            {price}
+            <span className="text-sm font-normal text-gray-400">/mo</span>
+          </p>
+          {originalPrice && (
+            <span className="text-sm text-gray-500 line-through">{originalPrice}</span>
+          )}
+        </div>
+        {originalPrice && (
+          <span className="inline-block mt-1 text-xs font-semibold text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
+            Alpha until June 2026
+          </span>
+        )}
       </div>
       <ul className="flex-1 space-y-2">
         {features.map((f) => (
@@ -140,7 +152,8 @@ async function startRazorpayCheckout(
     key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
     subscription_id: subscriptionId,
     name: "ClipCrafter",
-    description: plan === "pro" ? "Pro Plan — ₹2,499/month" : "Starter Plan — ₹999/month",
+    description:
+      plan === "pro" ? "Pro Plan — ₹90/month (alpha)" : "Starter Plan — ₹9/month (alpha)",
     image: "/favicon.ico",
     prefill: {
       name: user.fullName ?? "",
