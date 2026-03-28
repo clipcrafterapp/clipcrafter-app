@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { Clip } from "./types";
 
 export interface ClipTimingEditorProps {
@@ -10,46 +10,33 @@ export interface ClipTimingEditorProps {
 }
 
 export function ClipTimingEditor({ clip, videoRef, onClipAction }: ClipTimingEditorProps) {
-  const [startVal, setStartVal] = useState(clip.start_sec.toFixed(1));
-  const [endVal, setEndVal] = useState(clip.end_sec.toFixed(1));
+  // Track the in-progress typed value only while the field is focused.
+  // When not editing, display is derived directly from the prop so DB round-trips
+  // are reflected without needing to sync state via effects or refs.
+  const [startEdit, setStartEdit] = useState<string | null>(null);
+  const [endEdit, setEndEdit] = useState<string | null>(null);
 
-  // Sync local display when clip prop changes from outside (DB round-trip).
-  // Use refs to detect changes without triggering an extra render via useEffect.
-  const prevStartRef = useRef(clip.start_sec);
-  const prevEndRef = useRef(clip.end_sec);
-  if (prevStartRef.current !== clip.start_sec) {
-    prevStartRef.current = clip.start_sec;
-    setStartVal(clip.start_sec.toFixed(1));
-  }
-  if (prevEndRef.current !== clip.end_sec) {
-    prevEndRef.current = clip.end_sec;
-    setEndVal(clip.end_sec.toFixed(1));
-  }
+  const startDisplay = startEdit ?? clip.start_sec.toFixed(1);
+  const endDisplay = endEdit ?? clip.end_sec.toFixed(1);
 
   function commitStart(raw: string) {
     const v = parseFloat(raw);
-    if (isNaN(v)) {
-      setStartVal(clip.start_sec.toFixed(1));
-      return;
-    }
+    setStartEdit(null);
+    if (isNaN(v)) return;
     const clamped = Math.max(0, Math.min(v, clip.end_sec - 0.5));
     if (videoRef.current) videoRef.current.currentTime = clamped;
-    setStartVal(clamped.toFixed(1));
     if (clamped !== clip.start_sec) onClipAction(clip.id, { start_sec: clamped });
   }
 
   function commitEnd(raw: string) {
     const v = parseFloat(raw);
-    if (isNaN(v)) {
-      setEndVal(clip.end_sec.toFixed(1));
-      return;
-    }
+    setEndEdit(null);
+    if (isNaN(v)) return;
     let clamped = Math.max(clip.start_sec + 0.5, v);
     if (videoRef.current?.duration) {
       clamped = Math.min(clamped, videoRef.current.duration);
     }
     if (videoRef.current) videoRef.current.currentTime = clamped;
-    setEndVal(clamped.toFixed(1));
     if (clamped !== clip.end_sec) onClipAction(clip.id, { end_sec: clamped });
   }
 
@@ -60,9 +47,10 @@ export function ClipTimingEditor({ clip, videoRef, onClipAction }: ClipTimingEdi
         type="number"
         step="0.1"
         min="0"
-        value={startVal}
+        value={startDisplay}
+        onFocus={() => setStartEdit(clip.start_sec.toFixed(1))}
         onChange={(e) => {
-          setStartVal(e.target.value);
+          setStartEdit(e.target.value);
           const v = parseFloat(e.target.value);
           if (!isNaN(v) && videoRef.current) videoRef.current.currentTime = v;
         }}
@@ -77,9 +65,10 @@ export function ClipTimingEditor({ clip, videoRef, onClipAction }: ClipTimingEdi
         type="number"
         step="0.1"
         min="0"
-        value={endVal}
+        value={endDisplay}
+        onFocus={() => setEndEdit(clip.end_sec.toFixed(1))}
         onChange={(e) => {
-          setEndVal(e.target.value);
+          setEndEdit(e.target.value);
           const v = parseFloat(e.target.value);
           if (!isNaN(v) && videoRef.current) videoRef.current.currentTime = v;
         }}
