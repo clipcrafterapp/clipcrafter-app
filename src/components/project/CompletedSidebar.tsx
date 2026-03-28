@@ -1,11 +1,10 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Clip, StatusData } from "./types";
+import { Clip, Segment, StatusData } from "./types";
 import { ClipListView } from "./ClipListView";
 import { GraphView } from "./GraphView";
 import type { VideoGraph } from "@/lib/video-graph";
-import { Segment } from "./types";
 
 export interface CompletedSidebarProps {
   clips: Clip[] | null;

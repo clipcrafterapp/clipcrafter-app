@@ -208,6 +208,40 @@ function ClipHashtags({ hashtags }: { hashtags: string[] }) {
   );
 }
 
+function ClipFooter({
+  clip,
+  clipSegments,
+  onClipAction,
+  onExportClip,
+}: {
+  clip: Clip;
+  clipSegments: Segment[];
+  onClipAction: ClipCardProps["onClipAction"];
+  onExportClip: (id: string) => void;
+}) {
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <ClipActions clip={clip} onClipAction={onClipAction} onExportClip={onExportClip} />
+        {clipSegments.length > 0 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setTranscriptOpen((o) => !o);
+            }}
+            className="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
+          >
+            📝 Transcript {transcriptOpen ? "▴" : "▾"}
+          </button>
+        )}
+      </div>
+      {transcriptOpen && clipSegments.length > 0 && <ClipTranscript segments={clipSegments} />}
+    </>
+  );
+}
+
 export function ClipCard({
   clip,
   isSelected,
@@ -219,7 +253,6 @@ export function ClipCard({
   onExportClip,
   transcriptSegments,
 }: ClipCardProps) {
-  const [transcriptOpen, setTranscriptOpen] = useState(false);
   const clipSegments =
     transcriptSegments?.filter((s) => s.end > clip.start_sec && s.start < clip.end_sec) ?? [];
   const dur = clip.duration_sec?.toFixed(1) ?? (clip.end_sec - clip.start_sec).toFixed(1);
@@ -259,22 +292,12 @@ export function ClipCard({
         <span className="bg-gray-800 px-1.5 py-0.5 rounded text-gray-300">{dur}s</span>
       </div>
       {clip.hashtags?.length > 0 && <ClipHashtags hashtags={clip.hashtags} />}
-      <div className="flex flex-wrap items-center gap-2">
-        <ClipActions clip={clip} onClipAction={onClipAction} onExportClip={onExportClip} />
-        {clipSegments.length > 0 && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setTranscriptOpen((o) => !o);
-            }}
-            className="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
-          >
-            📝 Transcript {transcriptOpen ? "▴" : "▾"}
-          </button>
-        )}
-      </div>
-      {transcriptOpen && clipSegments.length > 0 && <ClipTranscript segments={clipSegments} />}
+      <ClipFooter
+        clip={clip}
+        clipSegments={clipSegments}
+        onClipAction={onClipAction}
+        onExportClip={onExportClip}
+      />
     </div>
   );
 }
