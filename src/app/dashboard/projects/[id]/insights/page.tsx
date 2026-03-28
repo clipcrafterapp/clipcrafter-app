@@ -28,7 +28,9 @@ function TranscriptView({ segments }: { segments: Segment[] }) {
         const speakerNum = m ? parseInt(m[1]) : null;
         const text = m ? seg.text.slice(m[0].length) : seg.text;
         const color =
-          speakerNum !== null ? SPEAKER_COLORS[speakerNum % SPEAKER_COLORS.length] : "text-gray-400";
+          speakerNum !== null
+            ? SPEAKER_COLORS[speakerNum % SPEAKER_COLORS.length]
+            : "text-gray-400";
 
         return (
           <div key={seg.id} className="flex gap-3 text-sm">
