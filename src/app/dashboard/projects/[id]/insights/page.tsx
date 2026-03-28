@@ -32,13 +32,7 @@ export default function InsightsPage() {
       {/* Transcript and "How it ran" — pass null artifacts to suppress the Downloads section */}
       <CollapsibleSidebar
         data={p.data}
-        artifacts={null}
-        clips={[]}
-        transcriptOpen={p.transcriptOpen}
-        downloadsOpen={false}
         howItRanOpen={p.howItRanOpen}
-        onToggleTranscript={() => p.setTranscriptOpen((o) => !o)}
-        onToggleDownloads={() => {}}
         onToggleHowItRan={() => p.setHowItRanOpen((o) => !o)}
       />
     </div>

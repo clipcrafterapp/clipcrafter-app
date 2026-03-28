@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { Clip, StatusData, Artifact } from "./types";
+import React, { useState, useRef, useEffect } from "react";
+import { Clip, StatusData } from "./types";
 import { ClipListView } from "./ClipListView";
 import { GraphView } from "./GraphView";
 import { CollapsibleSidebar } from "./CollapsibleSidebar";
@@ -22,9 +22,6 @@ export interface CompletedSidebarProps {
   clipPrompt: string;
   clipTargetDuration: string;
   data: StatusData;
-  artifacts: Record<string, Artifact> | null;
-  transcriptOpen: boolean;
-  downloadsOpen: boolean;
   howItRanOpen: boolean;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   onSwitchView: (mode: "list" | "graph") => void;
@@ -50,8 +47,6 @@ export interface CompletedSidebarProps {
   onSetSelectedClipIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   onUpdateTopicLabel: (original: string, label: string) => void;
   onSetTopicOverrides: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  onToggleTranscript: () => void;
-  onToggleDownloads: () => void;
   onToggleHowItRan: () => void;
   onStitchExport?: () => void;
 }
@@ -219,9 +214,7 @@ type ClipViewProps = Pick<
   | "onUpdateTopicLabel"
   | "onSetTopicOverrides"
   | "onStitchExport"
-> & {
-  onOpenDownloads?: () => void;
-};
+>;
 
 function ClipViewBody(props: ClipViewProps & { clips: NonNullable<ClipViewProps["clips"]> }) {
   const { viewMode, computedGraph, sortedClips, clips } = props;
@@ -267,7 +260,6 @@ function ClipViewBody(props: ClipViewProps & { clips: NonNullable<ClipViewProps[
         onClipAction={props.onClipAction}
         onExportClip={props.onExportClip}
         onGenerateClips={props.onGenerateClips}
-        onOpenDownloads={props.onOpenDownloads}
         onStitchExport={props.onStitchExport}
       />
     );
@@ -295,6 +287,38 @@ function GenerateSection(p: CompletedSidebarProps) {
   const [settingsOpen, setSettingsOpen] = useState(!hasClips);
   const isGenerating = p.clipsStatus === "generating";
 
+  type SettingsSnapshot = { clipCount: number | "auto"; clipPrompt: string; clipTargetDuration: string };
+  const lastGenerated = useRef<SettingsSnapshot | null>(null);
+
+  // Snapshot settings on mount and when clips first become non-empty
+  useEffect(() => {
+    if (hasClips && lastGenerated.current === null) {
+      lastGenerated.current = {
+        clipCount: p.clipCount,
+        clipPrompt: p.clipPrompt,
+        clipTargetDuration: p.clipTargetDuration,
+      };
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasClips]);
+
+  const settingsChanged =
+    lastGenerated.current === null ||
+    p.clipCount !== lastGenerated.current.clipCount ||
+    p.clipPrompt !== lastGenerated.current.clipPrompt ||
+    p.clipTargetDuration !== lastGenerated.current.clipTargetDuration;
+
+  const regenerateDisabled = isGenerating || (hasClips && !settingsChanged);
+
+  function handleGenerate() {
+    lastGenerated.current = {
+      clipCount: p.clipCount,
+      clipPrompt: p.clipPrompt,
+      clipTargetDuration: p.clipTargetDuration,
+    };
+    p.onGenerateClips();
+  }
+
   return (
     <>
       <div className="flex items-center gap-2">
@@ -315,8 +339,8 @@ function GenerateSection(p: CompletedSidebarProps) {
             </button>
             <button
               type="button"
-              onClick={p.onGenerateClips}
-              disabled={isGenerating}
+              onClick={handleGenerate}
+              disabled={regenerateDisabled}
               data-testid="generate-clips-btn"
               className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-semibold text-white transition-colors min-h-[36px]"
             >
@@ -349,7 +373,7 @@ function GenerateSection(p: CompletedSidebarProps) {
         topicOverrides={p.topicOverrides}
         videoRef={p.videoRef}
         onSwitchView={p.onSwitchView}
-        onGenerateClips={p.onGenerateClips}
+        onGenerateClips={handleGenerate}
         onSetSelectedTopic={p.onSetSelectedTopic}
         onSetSelectedClipId={p.onSetSelectedClipId}
         onSeekToClip={p.onSeekToClip}
@@ -363,7 +387,6 @@ function GenerateSection(p: CompletedSidebarProps) {
         onSetSelectedClipIds={p.onSetSelectedClipIds}
         onUpdateTopicLabel={p.onUpdateTopicLabel}
         onSetTopicOverrides={p.onSetTopicOverrides}
-        onOpenDownloads={p.downloadsOpen ? undefined : p.onToggleDownloads}
         onStitchExport={p.onStitchExport}
       />
     </>
@@ -376,15 +399,7 @@ export function CompletedSidebar(p: CompletedSidebarProps) {
       <GenerateSection {...p} />
       <CollapsibleSidebar
         data={p.data}
-        artifacts={p.artifacts}
-        clips={p.clips ?? []}
-        projectTitle={p.data.title}
-        stitchUrl={p.data.stitch_url}
-        transcriptOpen={p.transcriptOpen}
-        downloadsOpen={p.downloadsOpen}
         howItRanOpen={p.howItRanOpen}
-        onToggleTranscript={p.onToggleTranscript}
-        onToggleDownloads={p.onToggleDownloads}
         onToggleHowItRan={p.onToggleHowItRan}
       />
     </>

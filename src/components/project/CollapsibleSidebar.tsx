@@ -1,14 +1,7 @@
 "use client";
 
 import React from "react";
-import { Artifact, Clip, Segment, StatusData } from "./types";
-import { DownloadsPanel } from "./DownloadsPanel";
-
-function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
+import { StatusData } from "./types";
 
 function CollapsibleSection({
   title,
@@ -40,116 +33,6 @@ function CollapsibleSection({
       </button>
       {open && <div className="px-4 pb-4">{children}</div>}
     </div>
-  );
-}
-
-function TranscriptSection({
-  data,
-  open,
-  onToggle,
-}: {
-  data: StatusData;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  if (!data.transcript?.segments?.length) return null;
-  const speakerColors = [
-    "text-violet-400",
-    "text-blue-400",
-    "text-green-400",
-    "text-yellow-400",
-    "text-pink-400",
-  ];
-  return (
-    <CollapsibleSection title="📝 Transcript" open={open} onToggle={onToggle}>
-      <div className="max-h-96 overflow-y-auto -mx-4 px-4">
-        <div className="flex flex-col gap-2 pt-1">
-          {(data.transcript.segments as Segment[]).map((seg) => {
-            const m = seg.text.match(/^\[Speaker (\d+)\]\s*/);
-            const speakerNum = m ? parseInt(m[1]) : null;
-            const text = m ? seg.text.slice(m[0].length) : seg.text;
-            const color =
-              speakerNum !== null
-                ? speakerColors[speakerNum % speakerColors.length]
-                : "text-gray-400";
-            return (
-              <div key={seg.id} className="flex gap-3 text-sm">
-                <span className="text-gray-500 font-mono text-xs shrink-0 pt-0.5 w-10">
-                  {formatTime(seg.start)}
-                </span>
-                {speakerNum !== null && (
-                  <span className={`text-xs font-bold shrink-0 pt-0.5 w-16 ${color}`}>
-                    S{speakerNum}
-                  </span>
-                )}
-                <p className="text-gray-300">{text}</p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </CollapsibleSection>
-  );
-}
-
-function artifactIcon(key: string): string {
-  if (key === "video") return "🎬";
-  if (key === "audio") return "🎵";
-  if (key === "transcript") return "📝";
-  return "✨";
-}
-
-function DownloadsSection({
-  artifacts,
-  clips,
-  projectTitle,
-  stitchUrl,
-  open,
-  onToggle,
-}: {
-  artifacts: Record<string, Artifact>;
-  clips?: Clip[];
-  projectTitle?: string;
-  stitchUrl?: string | null;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <CollapsibleSection title="📦 Downloads" open={open} onToggle={onToggle}>
-      <div className="flex flex-wrap gap-2 pt-1">
-        {Object.entries(artifacts).map(([key, art]) =>
-          art.available ? (
-            <a
-              key={key}
-              href={art.url}
-              download={key === "transcript" || key === "highlights" ? `${key}.json` : undefined}
-              target={key === "video" || key === "audio" ? "_blank" : undefined}
-              rel="noreferrer"
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm text-white transition-colors border border-gray-700"
-            >
-              <span>{artifactIcon(key)}</span>
-              <span>{art.label}</span>
-              <span className="text-gray-500 text-xs">↓</span>
-            </a>
-          ) : (
-            <span
-              key={key}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-900 text-sm text-gray-600 border border-gray-800"
-            >
-              <span>{art.label}</span>
-              <span className="text-xs">—</span>
-            </span>
-          )
-        )}
-      </div>
-      {(clips && clips.length > 0) || stitchUrl ? (
-        <DownloadsPanel
-          clips={clips ?? []}
-          projectTitle={projectTitle ?? ""}
-          stitchUrl={stitchUrl}
-        />
-      ) : null}
-    </CollapsibleSection>
   );
 }
 
@@ -192,45 +75,10 @@ function HowItRanSection({
 
 export interface CollapsibleSidebarProps {
   data: StatusData;
-  artifacts: Record<string, Artifact> | null;
-  clips?: Clip[];
-  projectTitle?: string;
-  stitchUrl?: string | null;
-  transcriptOpen: boolean;
-  downloadsOpen: boolean;
   howItRanOpen: boolean;
-  onToggleTranscript: () => void;
-  onToggleDownloads: () => void;
   onToggleHowItRan: () => void;
 }
 
-export function CollapsibleSidebar({
-  data,
-  artifacts,
-  clips,
-  projectTitle,
-  stitchUrl,
-  transcriptOpen,
-  downloadsOpen,
-  howItRanOpen,
-  onToggleTranscript,
-  onToggleDownloads,
-  onToggleHowItRan,
-}: CollapsibleSidebarProps) {
-  return (
-    <>
-      <TranscriptSection data={data} open={transcriptOpen} onToggle={onToggleTranscript} />
-      {artifacts && Object.keys(artifacts).length > 0 && (
-        <DownloadsSection
-          artifacts={artifacts}
-          clips={clips}
-          projectTitle={projectTitle}
-          stitchUrl={stitchUrl}
-          open={downloadsOpen}
-          onToggle={onToggleDownloads}
-        />
-      )}
-      <HowItRanSection data={data} open={howItRanOpen} onToggle={onToggleHowItRan} />
-    </>
-  );
+export function CollapsibleSidebar({ data, howItRanOpen, onToggleHowItRan }: CollapsibleSidebarProps) {
+  return <HowItRanSection data={data} open={howItRanOpen} onToggle={onToggleHowItRan} />;
 }

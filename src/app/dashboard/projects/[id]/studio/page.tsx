@@ -36,9 +36,6 @@ function StudioSidebar() {
             clipPrompt={p.clipPrompt}
             clipTargetDuration={p.clipTargetDuration}
             data={p.data!}
-            artifacts={p.artifacts}
-            transcriptOpen={p.transcriptOpen}
-            downloadsOpen={p.downloadsOpen}
             howItRanOpen={p.howItRanOpen}
             videoRef={p.videoRef}
             onSwitchView={p.switchView}
@@ -66,8 +63,6 @@ function StudioSidebar() {
             onSetSelectedClipIds={p.setSelectedClipIds}
             onUpdateTopicLabel={p.updateTopicLabel}
             onSetTopicOverrides={p.setTopicOverrides}
-            onToggleTranscript={() => p.setTranscriptOpen((o) => !o)}
-            onToggleDownloads={() => p.setDownloadsOpen((o) => !o)}
             onToggleHowItRan={() => p.setHowItRanOpen((o) => !o)}
             onStitchExport={p.handleStitchExport}
           />

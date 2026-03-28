@@ -44,14 +44,10 @@ function TopicFilterChips({
 
 function OverflowMenu({
   withCaptions,
-  selectedClipIds,
   onToggleCaptions,
-  onStitchExport,
 }: {
   withCaptions: boolean;
-  selectedClipIds: Set<string>;
   onToggleCaptions: () => void;
-  onStitchExport?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -86,18 +82,6 @@ function OverflowMenu({
           >
             Caption: {withCaptions ? "ON" : "OFF"}
           </button>
-          {onStitchExport && selectedClipIds.size > 1 && (
-            <button
-              type="button"
-              onClick={() => {
-                onStitchExport!();
-                setOpen(false);
-              }}
-              className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-gray-800 transition-colors"
-            >
-              Stitch & Export ({selectedClipIds.size})
-            </button>
-          )}
         </div>
       )}
     </div>
@@ -129,6 +113,12 @@ function ExportBar({
   onKeepAll: () => void;
   onStitchExport?: () => void;
 }) {
+  const isExporting =
+    clips?.some((c) => selectedClipIds.has(c.id) && c.status === "exporting") ?? false;
+  const noneSelected = selectedClipIds.size === 0;
+  const multiSelected = selectedClipIds.size > 1;
+  const oneSelected = selectedClipIds.size === 1;
+
   return (
     <div className="sticky top-0 z-10 bg-gray-950 py-2 flex items-center gap-2 border-b border-gray-800 -mx-4 px-4">
       <button
@@ -149,23 +139,38 @@ function ExportBar({
       >
         Keep All
       </button>
-      <OverflowMenu
-        withCaptions={withCaptions}
-        selectedClipIds={selectedClipIds}
-        onToggleCaptions={onToggleCaptions}
-        onStitchExport={onStitchExport}
-      />
-      <button
-        type="button"
-        onClick={onExportBatch}
-        disabled={
-          selectedClipIds.size === 0 ||
-          (clips?.some((c) => selectedClipIds.has(c.id) && c.status === "exporting") ?? false)
-        }
-        className="ml-auto px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-white transition-colors min-h-[36px]"
-      >
-        Export {selectedClipIds.size}
-      </button>
+      <OverflowMenu withCaptions={withCaptions} onToggleCaptions={onToggleCaptions} />
+      <div className="ml-auto flex items-center gap-2">
+        {multiSelected && onStitchExport ? (
+          <>
+            <button
+              type="button"
+              onClick={onExportBatch}
+              disabled={isExporting}
+              className="text-xs text-gray-400 hover:text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors px-2 py-1"
+            >
+              ↗ Export individually
+            </button>
+            <button
+              type="button"
+              onClick={onStitchExport}
+              disabled={isExporting}
+              className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-white transition-colors min-h-[36px]"
+            >
+              Stitch & Export ({selectedClipIds.size})
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={onExportBatch}
+            disabled={noneSelected || isExporting}
+            className="px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-white transition-colors min-h-[36px]"
+          >
+            {oneSelected ? "Export clip" : `Export ${selectedClipIds.size}`}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
