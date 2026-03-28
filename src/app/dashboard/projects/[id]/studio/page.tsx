@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useProjectContext } from "@/components/project/ProjectContext";
 import { ProcessingStatus } from "@/components/project/ProcessingStatus";
 import { PlayerSection } from "@/components/project/PlayerSection";
@@ -13,6 +14,42 @@ function getCaptionText(p: ReturnType<typeof useProjectContext>): string | null 
     (s) => p.currentTime >= s.start && p.currentTime <= s.end
   );
   return seg ? seg.text.replace(/^\[Speaker \d+\]\s*/, "") : null;
+}
+
+function StickyExportBar({
+  selectedCount,
+  onExportBatch,
+  onStitchExport,
+}: {
+  selectedCount: number;
+  onExportBatch: () => void;
+  onStitchExport?: () => void;
+}) {
+  const [stitch, setStitch] = React.useState(false);
+  const canStitch = selectedCount > 1 && !!onStitchExport;
+
+  return (
+    <div className="lg:hidden fixed bottom-16 left-0 right-0 px-4 py-3 bg-gray-950 border-t border-gray-800 z-20 flex items-center gap-3">
+      {canStitch && (
+        <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer select-none shrink-0">
+          <input
+            type="checkbox"
+            checked={stitch}
+            onChange={(e) => setStitch(e.target.checked)}
+            className="w-4 h-4 accent-violet-500 cursor-pointer"
+          />
+          Stitch
+        </label>
+      )}
+      <button
+        type="button"
+        onClick={stitch && canStitch ? onStitchExport! : onExportBatch}
+        className="flex-1 py-3 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors"
+      >
+        Export {selectedCount} clip{selectedCount !== 1 ? "s" : ""}
+      </button>
+    </div>
+  );
 }
 
 function StudioSidebar() {
@@ -36,10 +73,6 @@ function StudioSidebar() {
             clipPrompt={p.clipPrompt}
             clipTargetDuration={p.clipTargetDuration}
             data={p.data!}
-            artifacts={p.artifacts}
-            transcriptOpen={p.transcriptOpen}
-            downloadsOpen={p.downloadsOpen}
-            howItRanOpen={p.howItRanOpen}
             videoRef={p.videoRef}
             onSwitchView={p.switchView}
             onGenerateClips={p.handleGenerateClips}
@@ -66,9 +99,6 @@ function StudioSidebar() {
             onSetSelectedClipIds={p.setSelectedClipIds}
             onUpdateTopicLabel={p.updateTopicLabel}
             onSetTopicOverrides={p.setTopicOverrides}
-            onToggleTranscript={() => p.setTranscriptOpen((o) => !o)}
-            onToggleDownloads={() => p.setDownloadsOpen((o) => !o)}
-            onToggleHowItRan={() => p.setHowItRanOpen((o) => !o)}
             onStitchExport={p.handleStitchExport}
           />
         </ErrorBoundary>
@@ -163,15 +193,11 @@ export default function StudioPage() {
       </div>
       {/* Sticky export bar — mobile only, shown when clips are selected */}
       {selectedCount > 0 && (
-        <div className="lg:hidden fixed bottom-16 left-0 right-0 px-4 py-3 bg-gray-950 border-t border-gray-800 z-20">
-          <button
-            type="button"
-            onClick={p.handleExportBatch}
-            className="w-full py-3 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors"
-          >
-            Export {selectedCount} clip{selectedCount !== 1 ? "s" : ""}
-          </button>
-        </div>
+        <StickyExportBar
+          selectedCount={selectedCount}
+          onExportBatch={p.handleExportBatch}
+          onStitchExport={p.handleStitchExport}
+        />
       )}
     </div>
   );

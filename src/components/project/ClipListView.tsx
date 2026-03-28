@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { Clip } from "./types";
+import { Clip, Segment } from "./types";
 import { ClipCard, SkippedClipCard } from "./ClipCard";
 
 function TopicFilterChips({
@@ -23,7 +23,7 @@ function TopicFilterChips({
         onClick={() => onSetSelectedTopic(null)}
         className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors min-h-[32px] ${selectedTopic === null ? "bg-violet-600 border-violet-600 text-white" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"}`}
       >
-        All ({clips?.length})
+        All topics ({clips?.length})
       </button>
       {topics.map((t) => {
         const count = clips?.filter((c) => c.topic === t).length ?? 0;
@@ -44,14 +44,10 @@ function TopicFilterChips({
 
 function OverflowMenu({
   withCaptions,
-  selectedClipIds,
   onToggleCaptions,
-  onStitchExport,
 }: {
   withCaptions: boolean;
-  selectedClipIds: Set<string>;
   onToggleCaptions: () => void;
-  onStitchExport?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -86,21 +82,60 @@ function OverflowMenu({
           >
             Caption: {withCaptions ? "ON" : "OFF"}
           </button>
-          {onStitchExport && selectedClipIds.size > 1 && (
-            <button
-              type="button"
-              onClick={() => {
-                onStitchExport!();
-                setOpen(false);
-              }}
-              className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-gray-800 transition-colors"
-            >
-              Stitch & Export ({selectedClipIds.size})
-            </button>
-          )}
         </div>
       )}
     </div>
+  );
+}
+
+function ExportActions({
+  selectedClipIds,
+  isExporting,
+  noneSelected,
+  oneSelected,
+  multiSelected,
+  onExportBatch,
+  onStitchExport,
+}: {
+  selectedClipIds: Set<string>;
+  isExporting: boolean;
+  noneSelected: boolean;
+  oneSelected: boolean;
+  multiSelected: boolean;
+  onExportBatch: () => void;
+  onStitchExport?: () => void;
+}) {
+  if (multiSelected && onStitchExport) {
+    return (
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onExportBatch}
+          disabled={isExporting}
+          className="text-xs text-gray-400 hover:text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors px-2 py-1"
+        >
+          ↗ Export individually
+        </button>
+        <button
+          type="button"
+          onClick={onStitchExport}
+          disabled={isExporting}
+          className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-white transition-colors min-h-[36px]"
+        >
+          Stitch & Export ({selectedClipIds.size})
+        </button>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onExportBatch}
+      disabled={noneSelected || isExporting}
+      className="ml-auto px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-white transition-colors min-h-[36px]"
+    >
+      {oneSelected ? "Export clip" : `Export ${selectedClipIds.size}`}
+    </button>
   );
 }
 
@@ -129,6 +164,12 @@ function ExportBar({
   onKeepAll: () => void;
   onStitchExport?: () => void;
 }) {
+  const isExporting =
+    clips?.some((c) => selectedClipIds.has(c.id) && c.status === "exporting") ?? false;
+  const noneSelected = selectedClipIds.size === 0;
+  const multiSelected = selectedClipIds.size > 1;
+  const oneSelected = selectedClipIds.size === 1;
+
   return (
     <div className="sticky top-0 z-10 bg-gray-950 py-2 flex items-center gap-2 border-b border-gray-800 -mx-4 px-4">
       <button
@@ -149,23 +190,16 @@ function ExportBar({
       >
         Keep All
       </button>
-      <OverflowMenu
-        withCaptions={withCaptions}
+      <OverflowMenu withCaptions={withCaptions} onToggleCaptions={onToggleCaptions} />
+      <ExportActions
         selectedClipIds={selectedClipIds}
-        onToggleCaptions={onToggleCaptions}
+        isExporting={isExporting}
+        noneSelected={noneSelected}
+        oneSelected={oneSelected}
+        multiSelected={multiSelected}
+        onExportBatch={onExportBatch}
         onStitchExport={onStitchExport}
       />
-      <button
-        type="button"
-        onClick={onExportBatch}
-        disabled={
-          selectedClipIds.size === 0 ||
-          (clips?.some((c) => selectedClipIds.has(c.id) && c.status === "exporting") ?? false)
-        }
-        className="ml-auto px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold text-white transition-colors min-h-[36px]"
-      >
-        Export {selectedClipIds.size}
-      </button>
     </div>
   );
 }
@@ -205,6 +239,7 @@ export interface ClipListViewProps {
   onGenerateClips: () => void;
   onOpenDownloads?: () => void;
   onStitchExport?: () => void;
+  transcriptSegments?: Segment[];
 }
 
 function ClipTabNav({
@@ -292,6 +327,7 @@ type ClipBodyProps = {
   regularClips: Clip[];
   skippedClips: Clip[];
   displayClips: Clip[];
+  transcriptSegments?: Segment[];
 } & Omit<
   ClipListViewProps,
   "sortedClips" | "selectedTopic" | "onSetSelectedTopic" | "onOpenDownloads"
@@ -339,6 +375,7 @@ function ClipBody(p: ClipBodyProps) {
               onToggleCheck={p.onToggleClipCheck}
               onClipAction={p.onClipAction}
               onExportClip={p.onExportClip}
+              transcriptSegments={p.transcriptSegments}
             />
           ))}
         {p.activeTab === "skipped" && (
@@ -390,6 +427,7 @@ export function ClipListView(props: ClipListViewProps) {
         regularClips={regularClips}
         skippedClips={skippedClips}
         displayClips={displayClips}
+        transcriptSegments={props.transcriptSegments}
       />
     </>
   );
