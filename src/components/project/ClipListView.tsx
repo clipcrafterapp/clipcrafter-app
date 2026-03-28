@@ -42,6 +42,62 @@ function TopicFilterChips({
   );
 }
 
+function OverflowMenu({
+  withCaptions,
+  selectedClipIds,
+  onToggleCaptions,
+  onStitchExport,
+}: {
+  withCaptions: boolean;
+  selectedClipIds: Set<string>;
+  onToggleCaptions: () => void;
+  onStitchExport?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="px-3 py-1 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:text-white transition-colors min-h-[30px]"
+      >
+        •••
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-20 bg-gray-900 border border-gray-700 rounded-lg shadow-lg min-w-[160px] overflow-hidden">
+          <button
+            type="button"
+            onClick={() => { onToggleCaptions(); setOpen(false); }}
+            className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-gray-800 transition-colors"
+          >
+            Caption: {withCaptions ? "ON" : "OFF"}
+          </button>
+          {onStitchExport && selectedClipIds.size > 1 && (
+            <button
+              type="button"
+              onClick={() => { onStitchExport!(); setOpen(false); }}
+              className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-gray-800 transition-colors"
+            >
+              Stitch & Export ({selectedClipIds.size})
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ExportBar({
   sortedClips,
   selectedClipIds,
@@ -67,20 +123,6 @@ function ExportBar({
   onKeepAll: () => void;
   onStitchExport?: () => void;
 }) {
-  const [overflowOpen, setOverflowOpen] = useState(false);
-  const overflowRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!overflowOpen) return;
-    function handleOutside(e: MouseEvent) {
-      if (overflowRef.current && !overflowRef.current.contains(e.target as Node)) {
-        setOverflowOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleOutside);
-    return () => document.removeEventListener("mousedown", handleOutside);
-  }, [overflowOpen]);
-
   return (
     <div className="sticky top-0 z-10 bg-gray-950 py-2 flex items-center gap-2 border-b border-gray-800 -mx-4 px-4">
       <button
@@ -101,41 +143,12 @@ function ExportBar({
       >
         Keep All
       </button>
-      <div className="relative" ref={overflowRef}>
-        <button
-          type="button"
-          onClick={() => setOverflowOpen((o) => !o)}
-          className="px-3 py-1 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:text-white transition-colors min-h-[30px]"
-        >
-          •••
-        </button>
-        {overflowOpen && (
-          <div className="absolute left-0 top-full mt-1 z-20 bg-gray-900 border border-gray-700 rounded-lg shadow-lg min-w-[160px] overflow-hidden">
-            <button
-              type="button"
-              onClick={() => {
-                onToggleCaptions();
-                setOverflowOpen(false);
-              }}
-              className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-gray-800 transition-colors"
-            >
-              Caption: {withCaptions ? "ON" : "OFF"}
-            </button>
-            {onStitchExport && selectedClipIds.size > 1 && (
-              <button
-                type="button"
-                onClick={() => {
-                  onStitchExport!();
-                  setOverflowOpen(false);
-                }}
-                className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-gray-800 transition-colors"
-              >
-                Stitch & Export ({selectedClipIds.size})
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      <OverflowMenu
+        withCaptions={withCaptions}
+        selectedClipIds={selectedClipIds}
+        onToggleCaptions={onToggleCaptions}
+        onStitchExport={onStitchExport}
+      />
       <button
         type="button"
         onClick={onExportBatch}
