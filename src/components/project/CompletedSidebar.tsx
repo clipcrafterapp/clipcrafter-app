@@ -282,77 +282,121 @@ function ClipView(props: ClipViewProps) {
   return <ClipViewBody {...props} clips={clips} />;
 }
 
+type SettingsSnapshot = {
+  clipCount: number | "auto";
+  clipPrompt: string;
+  clipTargetDuration: string;
+};
+
+function useSmartRegenerate(
+  hasClips: boolean,
+  settings: SettingsSnapshot,
+  onGenerateClips: () => void
+) {
+  const lastGenerated = useRef<SettingsSnapshot | null>(null);
+
+  useEffect(() => {
+    if (hasClips && lastGenerated.current === null) {
+      lastGenerated.current = settings;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasClips]);
+
+  const snap = lastGenerated.current;
+  const settingsChanged =
+    snap === null ||
+    settings.clipCount !== snap.clipCount ||
+    settings.clipPrompt !== snap.clipPrompt ||
+    settings.clipTargetDuration !== snap.clipTargetDuration;
+
+  function handleGenerate() {
+    lastGenerated.current = settings;
+    onGenerateClips();
+  }
+
+  return { settingsChanged, handleGenerate };
+}
+
+function ClipSectionHeader({
+  viewMode,
+  hasGraph,
+  hasClips,
+  settingsOpen,
+  regenerateDisabled,
+  isGenerating,
+  onSwitchView,
+  onToggleSettings,
+  onRegenerate,
+}: {
+  viewMode: "list" | "graph";
+  hasGraph: boolean;
+  hasClips: boolean;
+  settingsOpen: boolean;
+  regenerateDisabled: boolean;
+  isGenerating: boolean;
+  onSwitchView: (m: "list" | "graph") => void;
+  onToggleSettings: () => void;
+  onRegenerate: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <ViewToggle viewMode={viewMode} hasGraph={hasGraph} onSwitchView={onSwitchView} />
+      <div className="flex-1" />
+      {hasClips && (
+        <>
+          <button
+            type="button"
+            onClick={onToggleSettings}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-transparent text-gray-400 hover:text-white transition-colors min-h-[32px]"
+          >
+            ⚙ {settingsOpen ? "▴" : "▾"}
+          </button>
+          <button
+            type="button"
+            onClick={onRegenerate}
+            disabled={regenerateDisabled}
+            data-testid="generate-clips-btn"
+            className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-semibold text-white transition-colors min-h-[36px]"
+          >
+            {isGenerating ? "Generating…" : "Regenerate"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function GenerateSection(p: CompletedSidebarProps) {
   const hasClips = !!(p.clips && p.clips.length > 0);
   const [settingsOpen, setSettingsOpen] = useState(!hasClips);
   const isGenerating = p.clipsStatus === "generating";
 
-  type SettingsSnapshot = {
-    clipCount: number | "auto";
-    clipPrompt: string;
-    clipTargetDuration: string;
+  const settings: SettingsSnapshot = {
+    clipCount: p.clipCount,
+    clipPrompt: p.clipPrompt,
+    clipTargetDuration: p.clipTargetDuration,
   };
-  const lastGenerated = useRef<SettingsSnapshot | null>(null);
-
-  // Snapshot settings on mount and when clips first become non-empty
-  useEffect(() => {
-    if (hasClips && lastGenerated.current === null) {
-      lastGenerated.current = {
-        clipCount: p.clipCount,
-        clipPrompt: p.clipPrompt,
-        clipTargetDuration: p.clipTargetDuration,
-      };
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasClips]);
-
-  const settingsChanged =
-    lastGenerated.current === null ||
-    p.clipCount !== lastGenerated.current.clipCount ||
-    p.clipPrompt !== lastGenerated.current.clipPrompt ||
-    p.clipTargetDuration !== lastGenerated.current.clipTargetDuration;
+  const { settingsChanged, handleGenerate } = useSmartRegenerate(
+    hasClips,
+    settings,
+    p.onGenerateClips
+  );
 
   const regenerateDisabled = isGenerating || (hasClips && !settingsChanged);
 
-  function handleGenerate() {
-    lastGenerated.current = {
-      clipCount: p.clipCount,
-      clipPrompt: p.clipPrompt,
-      clipTargetDuration: p.clipTargetDuration,
-    };
-    p.onGenerateClips();
-  }
-
   return (
     <>
-      <div className="flex items-center gap-2">
-        <ViewToggle
-          viewMode={p.viewMode}
-          hasGraph={!!p.computedGraph}
-          onSwitchView={p.onSwitchView}
-        />
-        <div className="flex-1" />
-        {hasClips && (
-          <>
-            <button
-              type="button"
-              onClick={() => setSettingsOpen((o) => !o)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-transparent text-gray-400 hover:text-white transition-colors min-h-[32px]"
-            >
-              ⚙ {settingsOpen ? "▴" : "▾"}
-            </button>
-            <button
-              type="button"
-              onClick={handleGenerate}
-              disabled={regenerateDisabled}
-              data-testid="generate-clips-btn"
-              className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-semibold text-white transition-colors min-h-[36px]"
-            >
-              {isGenerating ? "Generating…" : "Regenerate"}
-            </button>
-          </>
-        )}
-      </div>
+      <ClipSectionHeader
+        viewMode={p.viewMode}
+        hasGraph={!!p.computedGraph}
+        hasClips={hasClips}
+        settingsOpen={settingsOpen}
+        regenerateDisabled={regenerateDisabled}
+        isGenerating={isGenerating}
+        onSwitchView={p.onSwitchView}
+        onToggleSettings={() => setSettingsOpen((o) => !o)}
+        onRegenerate={handleGenerate}
+      />
       {(!hasClips || settingsOpen) && (
         <GenerateControls
           clipCount={p.clipCount}
