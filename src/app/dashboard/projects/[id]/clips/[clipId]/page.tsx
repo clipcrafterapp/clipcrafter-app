@@ -4,9 +4,9 @@ import { use, useCallback } from "react";
 import Link from "next/link";
 import { TwickTimeline } from "@/components/project/TwickTimeline";
 import { ClipRemotionPlayer } from "@/components/editor/ClipRemotionPlayer";
-import { ClipEditPanel } from "@/components/editor/ClipEditPanel";
+import { ClipEditPanel, ClipFramingControls } from "@/components/editor/ClipEditPanel";
 import { useClipEditor } from "@/components/editor/useClipEditor";
-import type { Clip, CaptionStyle } from "@/components/project/types";
+import type { Clip } from "@/components/project/types";
 
 // ── Back bar ──────────────────────────────────────────────────────────────────
 
@@ -37,37 +37,36 @@ function BackBar({ projectId, title }: { projectId: string; title: string }) {
 
 // ── Player pane ───────────────────────────────────────────────────────────────
 
-function PlayerPane({
-  editor,
-  captionStyle,
-}: {
-  editor: ReturnType<typeof useClipEditor>;
-  captionStyle: CaptionStyle;
-}) {
+function PlayerPane({ editor }: { editor: ReturnType<typeof useClipEditor> }) {
   return (
-    <div className="lg:w-[60%] bg-black flex items-center justify-center p-4 overflow-hidden min-h-[300px] lg:min-h-0">
-      <div
-        className="w-full h-full flex items-center justify-center"
-        style={{
-          aspectRatio: editor.format === "16:9" ? "16/9" : "9/16",
-          maxHeight: "100%",
-          maxWidth: editor.format === "16:9" ? "100%" : "50%",
-        }}
-      >
-        <ClipRemotionPlayer
-          videoSrc={editor.data!.videoUrl}
-          startSec={editor.startSec}
-          endSec={editor.endSec}
-          captions={editor.captions}
-          captionPosition={editor.captionPosition}
-          captionSize={editor.captionSize}
-          captionStyle={captionStyle}
-          aspectRatio={editor.format}
-          cropMode={editor.cropMode}
-          cropX={editor.cropX}
-          cropY={editor.cropY}
-          cropZoom={editor.cropZoom}
-        />
+    <div className="lg:w-[60%] bg-gray-950 flex flex-col min-h-0">
+      <div className="bg-black flex items-center justify-center p-4 overflow-hidden flex-1 min-h-[300px]">
+        <div
+          className="w-full h-full flex items-center justify-center"
+          style={{
+            aspectRatio: editor.format === "16:9" ? "16/9" : "9/16",
+            maxHeight: "100%",
+            maxWidth: editor.format === "16:9" ? "100%" : "50%",
+          }}
+        >
+          <ClipRemotionPlayer
+            videoSrc={editor.data!.videoUrl}
+            startSec={editor.startSec}
+            endSec={editor.endSec}
+            captions={editor.captions}
+            captionPosition={editor.captionPosition}
+            captionSize={editor.captionSize}
+            captionStyle={editor.captionStyle}
+            aspectRatio={editor.format}
+            cropMode={editor.cropMode}
+            cropX={editor.cropX}
+            cropY={editor.cropY}
+            cropZoom={editor.cropZoom}
+          />
+        </div>
+      </div>
+      <div className="border-t border-gray-800 px-4 py-3">
+        <ClipFramingControls editor={editor} />
       </div>
     </div>
   );
@@ -110,14 +109,12 @@ export default function ClipEditorPage({
     clip_title: editor.title || editor.data.clip.clip_title,
   };
 
-  const captionStyle = (editor.data.clip.caption_style as CaptionStyle) || "hormozi";
-
   return (
     <div className="flex flex-col min-h-full bg-gray-950">
       <BackBar projectId={projectId} title={editor.title} />
 
       <div className="flex flex-col lg:flex-row flex-1 min-h-0">
-        <PlayerPane editor={editor} captionStyle={captionStyle} />
+        <PlayerPane editor={editor} />
         <ClipEditPanel projectId={projectId} clipId={clipId} editor={editor} />
       </div>
 

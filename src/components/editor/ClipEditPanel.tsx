@@ -147,20 +147,47 @@ function TimingInputs({
   );
 }
 
+const CAPTION_STYLE_LABELS = {
+  hormozi: "Hormozi",
+  modern: "Modern",
+  neon: "Neon",
+  minimal: "Minimal",
+} as const;
+
 function CaptionSection({
+  captionStyle,
   captionPosition,
   captionSize,
+  setCaptionStyle,
   setCaptionPosition,
   setCaptionSize,
 }: Pick<
   ClipEditorState,
-  "captionPosition" | "captionSize" | "setCaptionPosition" | "setCaptionSize"
+  | "captionStyle"
+  | "captionPosition"
+  | "captionSize"
+  | "setCaptionStyle"
+  | "setCaptionPosition"
+  | "setCaptionSize"
 >) {
   return (
     <div className="border-t border-gray-800 pt-4 flex flex-col gap-3">
-      <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
-        Caption Style (preview)
-      </p>
+      <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Captions</p>
+      <div>
+        <p className="text-xs text-gray-500 mb-2">Style</p>
+        <div className="grid grid-cols-2 gap-2">
+          {(["hormozi", "modern", "neon", "minimal"] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setCaptionStyle(s)}
+              className={`py-1.5 px-3 rounded-lg text-xs font-medium transition-colors ${captionStyle === s ? "bg-violet-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+            >
+              {CAPTION_STYLE_LABELS[s]}
+            </button>
+          ))}
+        </div>
+      </div>
       <ChipGroup
         label="Position"
         options={["top", "center", "bottom"] as const}
@@ -359,21 +386,14 @@ export function ClipEditPanel({ clipId, editor }: ClipEditPanelProps) {
         schedulePatch={editor.schedulePatch}
       />
       <CaptionSection
+        captionStyle={editor.captionStyle}
         captionPosition={editor.captionPosition}
         captionSize={editor.captionSize}
+        setCaptionStyle={editor.setCaptionStyle}
         setCaptionPosition={editor.setCaptionPosition}
         setCaptionSize={editor.setCaptionSize}
       />
-      <CropSection
-        cropMode={editor.cropMode}
-        cropX={editor.cropX}
-        cropY={editor.cropY}
-        cropZoom={editor.cropZoom}
-        setCropMode={editor.setCropMode}
-        setCropX={editor.setCropX}
-        setCropY={editor.setCropY}
-        setCropZoom={editor.setCropZoom}
-      />
+
       <ExportSection
         format={editor.format}
         exporting={editor.exporting}
@@ -384,5 +404,22 @@ export function ClipEditPanel({ clipId, editor }: ClipEditPanelProps) {
         handleExport={editor.handleExport}
       />
     </div>
+  );
+}
+
+// ── Framing controls (exported for use below the player) ─────────────────────
+
+export function ClipFramingControls({ editor }: { editor: ClipEditorState }) {
+  return (
+    <CropSection
+      cropMode={editor.cropMode}
+      cropX={editor.cropX}
+      cropY={editor.cropY}
+      cropZoom={editor.cropZoom}
+      setCropMode={editor.setCropMode}
+      setCropX={editor.setCropX}
+      setCropY={editor.setCropY}
+      setCropZoom={editor.setCropZoom}
+    />
   );
 }

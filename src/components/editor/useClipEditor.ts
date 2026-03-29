@@ -18,6 +18,8 @@ export interface ClipEditorState {
   endSec: number;
   title: string;
   captions: ClipCaption[];
+  captionStyle: "hormozi" | "modern" | "neon" | "minimal";
+  setCaptionStyle: (v: "hormozi" | "modern" | "neon" | "minimal") => void;
   captionPosition: "top" | "center" | "bottom";
   captionSize: "sm" | "md" | "lg";
   format: "9:16" | "16:9";
@@ -179,6 +181,7 @@ function useClipLoader(
     setTitle: (v: string) => void;
     setCurrentTime: (v: number) => void;
     setFormat: (v: "9:16" | "16:9") => void;
+    setCaptionStyle: (v: "hormozi" | "modern" | "neon" | "minimal") => void;
     setClipStatus: (v: Clip["status"]) => void;
     setCaptions: (v: ClipCaption[]) => void;
     setVideoDuration: (v: number) => void;
@@ -192,6 +195,7 @@ function useClipLoader(
     setTitle,
     setCurrentTime,
     setFormat,
+    setCaptionStyle,
     setClipStatus,
     setCaptions,
     setVideoDuration,
@@ -214,6 +218,9 @@ function useClipLoader(
         // Use clip end_sec as the video duration fallback (Remotion Player manages its own playback)
         setVideoDuration(d.clip.end_sec);
         if ((d.clip as Clip & { aspect_ratio?: string }).aspect_ratio === "16:9") setFormat("16:9");
+        const style = (d.clip as Clip & { caption_style?: string }).caption_style;
+        if (style && ["hormozi", "modern", "neon", "minimal"].includes(style))
+          setCaptionStyle(style as "hormozi" | "modern" | "neon" | "minimal");
       })
       .catch(() => toast.error("Failed to load clip"))
       .finally(() => setLoading(false));
@@ -226,6 +233,7 @@ function useClipLoader(
     setTitle,
     setCurrentTime,
     setFormat,
+    setCaptionStyle,
     setClipStatus,
     setCaptions,
     setVideoDuration,
@@ -236,6 +244,9 @@ function useClipLoader(
 // ── Main hook ─────────────────────────────────────────────────────────────────
 
 function useEditorStyleState() {
+  const [captionStyle, setCaptionStyle] = useState<"hormozi" | "modern" | "neon" | "minimal">(
+    "hormozi"
+  );
   const [captionPosition, setCaptionPosition] = useState<"top" | "center" | "bottom">("bottom");
   const [captionSize, setCaptionSize] = useState<"sm" | "md" | "lg">("md");
   const [format, setFormat] = useState<"9:16" | "16:9">("9:16");
@@ -246,6 +257,8 @@ function useEditorStyleState() {
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   return {
+    captionStyle,
+    setCaptionStyle,
     captionPosition,
     setCaptionPosition,
     captionSize,
@@ -309,6 +322,7 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
     setTitle,
     setCurrentTime: style.setCurrentTime,
     setFormat: style.setFormat,
+    setCaptionStyle: style.setCaptionStyle,
     setClipStatus,
     setCaptions,
     setVideoDuration: style.setVideoDuration,
@@ -338,6 +352,8 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
     endSec,
     title,
     captions,
+    captionStyle: style.captionStyle,
+    setCaptionStyle: style.setCaptionStyle,
     captionPosition: style.captionPosition,
     captionSize: style.captionSize,
     format: style.format,
