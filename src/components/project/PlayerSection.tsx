@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Clip } from "./types";
+import { TwickTimeline } from "./TwickTimeline";
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -16,7 +17,6 @@ export interface PlayerSectionProps {
   isYouTube: boolean;
   youTubeVideoId: string | null;
   videoRef: React.RefObject<HTMLVideoElement | null>;
-  timelineRef: React.RefObject<HTMLDivElement | null>;
   sortedClips: Clip[] | null;
   selectedClipId: string | null;
   clips: Clip[] | null;
@@ -31,8 +31,8 @@ export interface PlayerSectionProps {
   onTimeUpdate: () => void;
   onLoadedMetadata: () => void;
   onSetIsPlaying: (v: boolean) => void;
-  onTimelineClick: (e: React.MouseEvent<HTMLDivElement>) => void;
-  onHandleMouseDown: (e: React.MouseEvent, clipId: string, side: "start" | "end") => void;
+  onSeek: (seconds: number) => void;
+  onClipTrimmed?: (clipId: string, startSec: number, endSec: number) => void;
   onTogglePlay: () => void;
   onSkipPrev: () => void;
   onSkipNext: () => void;
@@ -44,119 +44,6 @@ export interface PlayerSectionProps {
   onSeekToClip: (clip: Clip) => void;
   selectedTopic: string | null;
   selectedClipIds: Set<string>;
-}
-
-function clipBarColor(clip: Clip, isSelected: boolean): string {
-  if (clip.status === "approved") return "bg-green-600/60";
-  if (clip.status === "rejected") return "bg-gray-700/40";
-  return isSelected ? "bg-violet-500/70" : "bg-violet-600/50";
-}
-
-function makeMouseEventFromTouch(touch: React.Touch): React.MouseEvent {
-  return {
-    clientX: touch.clientX,
-    stopPropagation: () => {},
-    preventDefault: () => {},
-  } as unknown as React.MouseEvent;
-}
-
-function ClipHandle({
-  clipId,
-  side,
-  onHandleMouseDown,
-}: {
-  clipId: string;
-  side: "start" | "end";
-  onHandleMouseDown: (e: React.MouseEvent, clipId: string, side: "start" | "end") => void;
-}) {
-  const posClass = side === "start" ? "left-0" : "right-0";
-  return (
-    <div
-      className={`absolute ${posClass} top-0 bottom-0 w-6 cursor-ew-resize flex items-center justify-center touch-none`}
-      onMouseDown={(e) => onHandleMouseDown(e, clipId, side)}
-      onTouchStart={(e) => {
-        e.stopPropagation();
-        onHandleMouseDown(makeMouseEventFromTouch(e.touches[0]), clipId, side);
-      }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="w-1.5 h-8 bg-white/80 rounded-full" />
-    </div>
-  );
-}
-
-function TimelineScrubber({
-  timelineRef,
-  sortedClips,
-  selectedClipId,
-  duration,
-  currentTime,
-  onTimelineClick,
-  onHandleMouseDown,
-  onSetSelectedClipId,
-  onSeekToClip,
-  selectedTopic,
-  selectedClipIds,
-}: {
-  timelineRef: React.RefObject<HTMLDivElement | null>;
-  sortedClips: Clip[] | null;
-  selectedClipId: string | null;
-  duration: number;
-  currentTime: number;
-  onTimelineClick: (e: React.MouseEvent<HTMLDivElement>) => void;
-  onHandleMouseDown: (e: React.MouseEvent, clipId: string, side: "start" | "end") => void;
-  onSetSelectedClipId: (id: string) => void;
-  onSeekToClip: (clip: Clip) => void;
-  selectedTopic: string | null;
-  selectedClipIds: Set<string>;
-}) {
-  return (
-    <div
-      ref={timelineRef}
-      className="relative h-20 bg-gray-900 border-t border-gray-800 cursor-pointer shrink-0"
-      onClick={onTimelineClick}
-    >
-      {sortedClips &&
-        duration > 0 &&
-        sortedClips.map((clip) => {
-          const left = (clip.start_sec / duration) * 100;
-          const width = ((clip.end_sec - clip.start_sec) / duration) * 100;
-          const isSel = clip.id === selectedClipId;
-          const isInFilter = !selectedTopic || clip.topic === selectedTopic;
-          const isChecked = selectedClipIds.has(clip.id);
-          let dimClass = "";
-          if (!isInFilter) dimClass = "opacity-30";
-          else if (!isChecked && selectedClipIds.size > 0) dimClass = "opacity-60";
-          return (
-            <div
-              key={clip.id}
-              className={`absolute top-2 bottom-2 rounded ${clipBarColor(clip, isSel)} ${isSel ? "z-10" : "z-0"} ${dimClass}`}
-              style={{ left: `${left}%`, width: `${width}%` }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSetSelectedClipId(clip.id);
-                onSeekToClip(clip);
-              }}
-            >
-              <ClipHandle clipId={clip.id} side="start" onHandleMouseDown={onHandleMouseDown} />
-              <ClipHandle clipId={clip.id} side="end" onHandleMouseDown={onHandleMouseDown} />
-            </div>
-          );
-        })}
-      {duration > 0 && (
-        <div
-          className="absolute top-0 bottom-0 w-px bg-white z-20 pointer-events-none"
-          style={{ left: `${(currentTime / duration) * 100}%` }}
-        />
-      )}
-      <div className="absolute bottom-1 left-2 text-xs text-gray-600 font-mono pointer-events-none">
-        {formatTime(currentTime)}
-      </div>
-      <div className="absolute bottom-1 right-2 text-xs text-gray-600 font-mono pointer-events-none">
-        {formatTime(duration)}
-      </div>
-    </div>
-  );
 }
 
 function TransportButtons({
@@ -448,18 +335,19 @@ function PlayerReadyContent(p: PlayerReadyProps) {
         onSetIsPlaying={p.onSetIsPlaying}
       />
       {!p.isYouTube && (
-        <TimelineScrubber
-          timelineRef={p.timelineRef}
-          sortedClips={p.sortedClips}
-          selectedClipId={p.selectedClipId}
+        <TwickTimeline
+          clips={p.sortedClips ?? []}
           duration={p.duration}
           currentTime={p.currentTime}
-          onTimelineClick={p.onTimelineClick}
-          onHandleMouseDown={p.onHandleMouseDown}
-          onSetSelectedClipId={p.onSetSelectedClipId}
-          onSeekToClip={p.onSeekToClip}
-          selectedTopic={p.selectedTopic}
           selectedClipIds={p.selectedClipIds}
+          selectedTopic={p.selectedTopic}
+          onSeek={p.onSeek}
+          onClipTrimmed={p.onClipTrimmed}
+          onClipClick={(clipId) => {
+            p.onSetSelectedClipId(clipId);
+            const clip = p.sortedClips?.find((c) => c.id === clipId);
+            if (clip) p.onSeekToClip(clip);
+          }}
         />
       )}
       {!p.isYouTube && (
