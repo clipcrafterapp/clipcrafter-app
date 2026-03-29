@@ -42,7 +42,10 @@ export default function AdminPage() {
     return (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((n) => (
-          <div key={n} className="bg-gray-900 border border-gray-800 rounded-xl p-5 h-24 animate-pulse" />
+          <div
+            key={n}
+            className="bg-gray-900 border border-gray-800 rounded-xl p-5 h-24 animate-pulse"
+          />
         ))}
       </div>
     );
@@ -52,7 +55,11 @@ export default function AdminPage() {
     { label: "Free", count: stats.planBreakdown.free, color: "bg-gray-700 text-gray-300" },
     { label: "Starter", count: stats.planBreakdown.starter, color: "bg-blue-900 text-blue-300" },
     { label: "Pro", count: stats.planBreakdown.pro, color: "bg-violet-900 text-violet-300" },
-    { label: "Unlimited", count: stats.planBreakdown.unlimited, color: "bg-yellow-900 text-yellow-300" },
+    {
+      label: "Unlimited",
+      count: stats.planBreakdown.unlimited,
+      color: "bg-yellow-900 text-yellow-300",
+    },
   ];
 
   return (
@@ -70,7 +77,10 @@ export default function AdminPage() {
         <div className="text-gray-500 text-xs uppercase tracking-wide mb-3">Plan Breakdown</div>
         <div className="flex flex-wrap gap-3">
           {planPills.map((pill) => (
-            <span key={pill.label} className={`px-3 py-1.5 rounded-full text-sm font-medium ${pill.color}`}>
+            <span
+              key={pill.label}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium ${pill.color}`}
+            >
               {pill.label}: {pill.count}
             </span>
           ))}

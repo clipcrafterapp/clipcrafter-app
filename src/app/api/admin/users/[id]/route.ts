@@ -16,10 +16,7 @@ function isValidUsage(val: unknown): val is number {
   return typeof val === "number" && val >= 0;
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth();
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
   if (!isAdmin(userId)) return Response.json({ error: "Forbidden" }, { status: 403 });
@@ -34,7 +31,8 @@ export async function PATCH(
   }
 
   if (body.daily_usage_seconds !== undefined) {
-    if (!isValidUsage(body.daily_usage_seconds)) return Response.json({ error: "Invalid daily_usage_seconds" }, { status: 400 });
+    if (!isValidUsage(body.daily_usage_seconds))
+      return Response.json({ error: "Invalid daily_usage_seconds" }, { status: 400 });
     updates.daily_usage_seconds = body.daily_usage_seconds;
   }
 

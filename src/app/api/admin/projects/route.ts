@@ -14,7 +14,13 @@ type RawProject = {
 function parseParams(searchParams: URLSearchParams) {
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
   const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10)));
-  return { page, limit, offset: (page - 1) * limit, status: searchParams.get("status") ?? "", user_id: searchParams.get("user_id") ?? "" };
+  return {
+    page,
+    limit,
+    offset: (page - 1) * limit,
+    status: searchParams.get("status") ?? "",
+    user_id: searchParams.get("user_id") ?? "",
+  };
 }
 
 function toUserEmail(users: RawProject["users"]): string | undefined {
@@ -26,7 +32,13 @@ export async function GET(request: Request) {
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
   if (!isAdmin(userId)) return Response.json({ error: "Forbidden" }, { status: 403 });
 
-  const { page: _page, limit, offset, status, user_id } = parseParams(new URL(request.url).searchParams);
+  const {
+    page: _page,
+    limit,
+    offset,
+    status,
+    user_id,
+  } = parseParams(new URL(request.url).searchParams);
 
   let query = supabaseAdmin
     .from("projects")

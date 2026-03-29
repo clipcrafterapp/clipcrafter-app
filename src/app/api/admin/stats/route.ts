@@ -29,8 +29,14 @@ export async function GET() {
   ] = await Promise.all([
     supabaseAdmin.from("users").select("id", { count: "exact", head: true }),
     supabaseAdmin.from("projects").select("id", { count: "exact", head: true }),
-    supabaseAdmin.from("users").select("id", { count: "exact", head: true }).gt("daily_usage_seconds", 0),
-    supabaseAdmin.from("projects").select("id", { count: "exact", head: true }).eq("status", "failed"),
+    supabaseAdmin
+      .from("users")
+      .select("id", { count: "exact", head: true })
+      .gt("daily_usage_seconds", 0),
+    supabaseAdmin
+      .from("projects")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "failed"),
     supabaseAdmin.from("users").select("plan"),
   ]);
 

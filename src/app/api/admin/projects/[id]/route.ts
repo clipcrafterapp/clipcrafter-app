@@ -8,10 +8,7 @@ import {
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 
-export async function DELETE(
-  _request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth();
   if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
   if (!isAdmin(userId)) return Response.json({ error: "Forbidden" }, { status: 403 });
