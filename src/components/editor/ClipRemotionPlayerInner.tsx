@@ -32,17 +32,18 @@ export function ClipRemotionPlayerInner({
   const [compositionWidth, compositionHeight] =
     aspectRatio === "16:9" ? [1920, 1080] : [1080, 1920];
 
-  // Convert clip-relative seconds → Remotion Caption format (absolute milliseconds)
+  // Captions from API are already 0-based (start=0 = clip start).
+  // Remotion Caption type uses ms, composition time starts at 0.
   const remotionCaptions: Caption[] = useMemo(
     () =>
       captions.map((c) => ({
         text: c.text,
-        startMs: (c.start + startSec) * 1000,
-        endMs: (c.end + startSec) * 1000,
-        timestampMs: (c.start + startSec) * 1000,
+        startMs: c.start * 1000,
+        endMs: c.end * 1000,
+        timestampMs: c.start * 1000,
         confidence: 1,
       })),
-    [captions, startSec]
+    [captions]
   );
 
   return (

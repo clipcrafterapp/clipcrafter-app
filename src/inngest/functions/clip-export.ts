@@ -70,26 +70,26 @@ function stripSpeakerTag(text: string): string {
   return text.replace(/^\[Speaker \d+\]\s*/, "");
 }
 
-/** Convert transcript segments → Remotion Caption format (plain objects, no external type needed) */
+/** Convert transcript segments → Remotion Caption format (0-based ms, relative to clip start) */
 function toCaptions(segments: Segment[], clipStart: number, clipEnd: number) {
   return segments
     .filter((s) => s.end > clipStart && s.start < clipEnd)
     .map((s) => ({
       text: stripSpeakerTag(s.text),
-      startMs: s.start * 1000,
-      endMs: s.end * 1000,
-      timestampMs: s.start * 1000,
+      startMs: (s.start - clipStart) * 1000, // 0-based: clip start = 0ms
+      endMs: (s.end - clipStart) * 1000,
+      timestampMs: (s.start - clipStart) * 1000,
       confidence: 1,
     }));
 }
 
-/** Convert client-edited captions (clip-relative seconds) → Remotion Caption format */
-function customCaptionsToRemotionFormat(captions: CustomCaption[], clipStart: number) {
+/** Convert client-edited captions (already clip-relative seconds) → Remotion Caption format (0-based ms) */
+function customCaptionsToRemotionFormat(captions: CustomCaption[], _clipStart: number) {
   return captions.map((c) => ({
     text: c.text,
-    startMs: (c.start + clipStart) * 1000,
-    endMs: (c.end + clipStart) * 1000,
-    timestampMs: (c.start + clipStart) * 1000,
+    startMs: c.start * 1000, // already 0-based from the editor
+    endMs: c.end * 1000,
+    timestampMs: c.start * 1000,
     confidence: 1,
   }));
 }
