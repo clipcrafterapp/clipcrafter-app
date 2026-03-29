@@ -130,9 +130,9 @@ function useExportManager(
   return { exporting, clipStatus, setClipStatus, pollRef, handleExport };
 }
 
-// ── Main hook ─────────────────────────────────────────────────────────────────
+// ── Edit fields hook ──────────────────────────────────────────────────────────
 
-export function useClipEditor(projectId: string, clipId: string): ClipEditorState {
+function useClipEditFields(initialStatus: Clip["status"] = "pending") {
   const [data, setData] = useState<ClipEditorData | null>(null);
   const [loading, setLoading] = useState(true);
   const [startSec, setStartSec] = useState(0);
@@ -143,8 +143,36 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
   const [format, setFormat] = useState<"9:16" | "16:9">("9:16");
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
+  const [clipStatus, setClipStatus] = useState<Clip["status"]>(initialStatus);
+  return {
+    data,
+    setData,
+    loading,
+    setLoading,
+    startSec,
+    setStartSec,
+    endSec,
+    setEndSec,
+    title,
+    setTitle,
+    captionPosition,
+    setCaptionPosition,
+    captionSize,
+    setCaptionSize,
+    format,
+    setFormat,
+    currentTime,
+    setCurrentTime,
+    videoDuration,
+    setVideoDuration,
+    clipStatus,
+    setClipStatus,
+  };
+}
 
-  const { timerRef, schedulePatch } = usePatchScheduler(projectId, clipId);
+// ── Export payload refs (keeps stale-closure-free snapshot for export) ────────
+
+function useExportPayloadRefs(startSec: number, endSec: number, title: string, format: string) {
   const startSecRef = useRef(startSec);
   const endSecRef = useRef(endSec);
   const titleRef = useRef(title);
@@ -161,8 +189,7 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
   useEffect(() => {
     formatRef.current = format;
   }, [format]);
-
-  const getExportPayload = useCallback(
+  const getPayload = useCallback(
     () => ({
       clip_title: titleRef.current,
       start_sec: startSecRef.current,
@@ -171,7 +198,20 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
     }),
     []
   );
+  return getPayload;
+}
 
+// ── Main hook ─────────────────────────────────────────────────────────────────
+
+export function useClipEditor(projectId: string, clipId: string): ClipEditorState {
+  const fields = useClipEditFields();
+  const { timerRef, schedulePatch } = usePatchScheduler(projectId, clipId);
+  const getExportPayload = useExportPayloadRefs(
+    fields.startSec,
+    fields.endSec,
+    fields.title,
+    fields.format
+  );
   const { exporting, clipStatus, setClipStatus, pollRef, handleExport } = useExportManager(
     projectId,
     clipId,
@@ -185,17 +225,18 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
         return r.json() as Promise<ClipEditorData>;
       })
       .then((d) => {
-        setData(d);
-        setStartSec(d.clip.start_sec);
-        setEndSec(d.clip.end_sec);
-        setTitle(d.clip.clip_title ?? d.clip.title ?? "");
-        setCurrentTime(d.clip.start_sec);
+        fields.setData(d);
+        fields.setStartSec(d.clip.start_sec);
+        fields.setEndSec(d.clip.end_sec);
+        fields.setTitle(d.clip.clip_title ?? d.clip.title ?? "");
+        fields.setCurrentTime(d.clip.start_sec);
         setClipStatus(d.clip.status);
-        if (d.clip.aspect_ratio === "16:9") setFormat("16:9");
+        if (d.clip.aspect_ratio === "16:9") fields.setFormat("16:9");
       })
       .catch(() => toast.error("Failed to load clip"))
-      .finally(() => setLoading(false));
-  }, [projectId, clipId, setClipStatus]);
+      .finally(() => fields.setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, clipId]);
 
   useEffect(
     () => () => {
@@ -208,35 +249,36 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
   const handleClipTrimmed = useCallback(
     (id: string, ns: number, ne: number) => {
       if (id !== clipId) return;
-      setStartSec(ns);
-      setEndSec(ne);
-      setCurrentTime(ns);
+      fields.setStartSec(ns);
+      fields.setEndSec(ne);
+      fields.setCurrentTime(ns);
       schedulePatch({ start_sec: ns, end_sec: ne });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [clipId, schedulePatch]
   );
 
   return {
-    data,
-    loading,
-    startSec,
-    endSec,
-    title,
-    captionPosition,
-    captionSize,
-    format,
-    currentTime,
-    videoDuration,
+    data: fields.data,
+    loading: fields.loading,
+    startSec: fields.startSec,
+    endSec: fields.endSec,
+    title: fields.title,
+    captionPosition: fields.captionPosition,
+    captionSize: fields.captionSize,
+    format: fields.format,
+    currentTime: fields.currentTime,
+    videoDuration: fields.videoDuration,
     exporting,
     clipStatus,
-    setStartSec,
-    setEndSec,
-    setTitle,
-    setCaptionPosition,
-    setCaptionSize,
-    setFormat,
-    setCurrentTime,
-    setVideoDuration,
+    setStartSec: fields.setStartSec,
+    setEndSec: fields.setEndSec,
+    setTitle: fields.setTitle,
+    setCaptionPosition: fields.setCaptionPosition,
+    setCaptionSize: fields.setCaptionSize,
+    setFormat: fields.setFormat,
+    setCurrentTime: fields.setCurrentTime,
+    setVideoDuration: fields.setVideoDuration,
     schedulePatch,
     handleExport,
     handleClipTrimmed,
