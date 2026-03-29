@@ -115,6 +115,7 @@ function StudioSidebar() {
 
 function StudioPlayer() {
   const p = useProjectContext();
+  const { videoRef, handleClipAction } = p;
   const selectedClip = p.clips?.find((c) => c.id === p.selectedClipId) ?? null;
   const captionText = getCaptionText(p);
   return (
@@ -142,10 +143,10 @@ function StudioPlayer() {
           onLoadedMetadata={p.handleLoadedMetadata}
           onSetIsPlaying={p.setIsPlaying}
           onSeek={(s) => {
-            if (p.videoRef.current) p.videoRef.current.currentTime = s;
+            if (videoRef.current) videoRef.current.currentTime = s;
           }}
           onClipTrimmed={(clipId, startSec, endSec) => {
-            p.handleClipAction(clipId, { start_sec: startSec, end_sec: endSec });
+            handleClipAction(clipId, { start_sec: startSec, end_sec: endSec });
           }}
           onTogglePlay={p.togglePlay}
           onSkipPrev={p.skipPrev}

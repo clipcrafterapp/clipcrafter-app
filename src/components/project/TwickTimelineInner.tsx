@@ -13,17 +13,23 @@
  */
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import {
   TimelineProvider,
   useTimelineContext,
   TIMELINE_ELEMENT_TYPE,
   TRACK_TYPES,
+  type TrackElement,
+  type ProjectJSON,
+  type TimelineEditor,
 } from "@twick/timeline";
-import type { TrackElement, ProjectJSON } from "@twick/timeline";
 import { Clip } from "./types";
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ── constants ─────────────────────────────────────────────────────────────────
+
+const CLIPS_TRACK_ID = "clips-track";
+
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -36,8 +42,6 @@ function clipBarColor(clip: Clip, isSelected: boolean): string {
   if (clip.status === "rejected") return "bg-gray-700/40";
   return isSelected ? "bg-violet-500/70" : "bg-violet-600/50";
 }
-
-const CLIPS_TRACK_ID = "clips-track";
 
 function buildInitialData(clips: Clip[]): ProjectJSON {
   return {
@@ -59,7 +63,19 @@ function buildInitialData(clips: Clip[]): ProjectJSON {
   };
 }
 
-// ── props ────────────────────────────────────────────────────────────────────
+function applyTwick(editor: TimelineEditor, clipId: string, ns: number, ne: number) {
+  const data = editor.getTimelineData();
+  const track = data?.tracks.find((t) => t.getId() === CLIPS_TRACK_ID);
+  const el = track?.getElementById(clipId);
+  if (el) editor.trimElement(el as TrackElement, ns, ne);
+}
+
+function clampPatch(clip: Clip | undefined, side: "start" | "end", dv: number) {
+  if (!clip) return dv;
+  return side === "start" ? Math.min(dv, clip.end_sec - 0.5) : Math.max(dv, clip.start_sec + 0.5);
+}
+
+// ── props ─────────────────────────────────────────────────────────────────────
 
 export interface TwickTimelineProps {
   clips: Clip[];
@@ -72,105 +88,167 @@ export interface TwickTimelineProps {
   onClipClick?: (clipId: string) => void;
 }
 
-// ── inner component (needs TimelineProvider ancestor) ────────────────────────
+// ── drag handler hook ─────────────────────────────────────────────────────────
 
-function TimelineContent({
-  clips,
+interface DragHookConfig {
+  timelineRef: React.RefObject<HTMLDivElement | null>;
+  clipsMapRef: React.MutableRefObject<Map<string, Clip>>;
+  editor: TimelineEditor;
+  duration: number;
+  onSeek: (s: number) => void;
+  onClipTrimmed: TwickTimelineProps["onClipTrimmed"];
+}
+
+function useDragHandler(cfg: DragHookConfig) {
+  const { timelineRef, clipsMapRef, editor, duration, onSeek, onClipTrimmed } = cfg;
+  return useCallback(
+    (e: React.MouseEvent, clipId: string, side: "start" | "end") => {
+      e.stopPropagation();
+      e.preventDefault();
+      const init = clipsMapRef.current.get(clipId);
+      let dv = init ? (side === "start" ? init.start_sec : init.end_sec) : 0;
+      let lastMs = 0;
+      const onMove = (ev: MouseEvent) => {
+        const rect = timelineRef.current?.getBoundingClientRect();
+        if (!rect || duration === 0) return;
+        dv = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width)) * duration;
+        const now = Date.now();
+        if (now - lastMs >= 100) {
+          onSeek(dv);
+          lastMs = now;
+        }
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        window.removeEventListener("touchmove", onTm);
+        window.removeEventListener("touchend", onTe);
+        const clip = clipsMapRef.current.get(clipId);
+        const pv = clampPatch(clip, side, dv);
+        const ns = side === "start" ? pv : (clip?.start_sec ?? 0);
+        const ne = side === "end" ? pv : (clip?.end_sec ?? duration);
+        applyTwick(editor, clipId, ns, ne);
+        onClipTrimmed?.(clipId, ns, ne);
+      };
+      const onTm = (ev: TouchEvent) => {
+        ev.preventDefault();
+        onMove({ clientX: ev.touches[0].clientX } as MouseEvent);
+      };
+      const onTe = () => onUp();
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      window.addEventListener("touchmove", onTm, { passive: false });
+      window.addEventListener("touchend", onTe);
+    },
+    [clipsMapRef, timelineRef, editor, duration, onSeek, onClipTrimmed]
+  );
+}
+
+// ── ClipBar sub-component ─────────────────────────────────────────────────────
+
+function ClipBar({
+  clip,
   duration,
-  currentTime,
   selectedClipIds,
   selectedTopic,
-  onSeek,
-  onClipTrimmed,
   onClipClick,
-}: TwickTimelineProps) {
+  onHandleMouseDown,
+}: {
+  clip: Clip;
+  duration: number;
+  selectedClipIds: Set<string>;
+  selectedTopic: string | null;
+  onClipClick?: (id: string) => void;
+  onHandleMouseDown: (e: React.MouseEvent, id: string, side: "start" | "end") => void;
+}) {
+  const left = (clip.start_sec / duration) * 100;
+  const width = ((clip.end_sec - clip.start_sec) / duration) * 100;
+  const isSel = selectedClipIds.has(clip.id);
+  const isInFilter = !selectedTopic || clip.topic === selectedTopic;
+  const isChecked = selectedClipIds.has(clip.id);
+  let dimClass = "";
+  if (!isInFilter) dimClass = "opacity-30";
+  else if (!isChecked && selectedClipIds.size > 0) dimClass = "opacity-60";
+
+  function makeTouch(ev: React.TouchEvent, side: "start" | "end") {
+    ev.stopPropagation();
+    onHandleMouseDown(
+      {
+        clientX: ev.touches[0].clientX,
+        stopPropagation: () => {},
+        preventDefault: () => {},
+      } as unknown as React.MouseEvent,
+      clip.id,
+      side
+    );
+  }
+
+  return (
+    <div
+      className={`absolute top-2 bottom-2 rounded ${clipBarColor(clip, isSel)} ${isSel ? "z-10" : "z-0"} ${dimClass}`}
+      style={{ left: `${left}%`, width: `${width}%` }}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        onClipClick?.(clip.id);
+      }}
+    >
+      <div
+        className="absolute left-0 top-0 bottom-0 w-6 cursor-ew-resize flex items-center justify-center touch-none"
+        onMouseDown={(ev) => onHandleMouseDown(ev, clip.id, "start")}
+        onTouchStart={(ev) => makeTouch(ev, "start")}
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <div className="w-1.5 h-8 bg-white/80 rounded-full" />
+      </div>
+      <div
+        className="absolute right-0 top-0 bottom-0 w-6 cursor-ew-resize flex items-center justify-center touch-none"
+        onMouseDown={(ev) => onHandleMouseDown(ev, clip.id, "end")}
+        onTouchStart={(ev) => makeTouch(ev, "end")}
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <div className="w-1.5 h-8 bg-white/80 rounded-full" />
+      </div>
+    </div>
+  );
+}
+
+// ── inner component (needs TimelineProvider ancestor) ─────────────────────────
+
+function TimelineContent(props: TwickTimelineProps) {
+  const {
+    clips,
+    duration,
+    currentTime,
+    selectedClipIds,
+    selectedTopic,
+    onSeek,
+    onClipTrimmed,
+    onClipClick,
+  } = props;
   const { editor } = useTimelineContext();
   const timelineRef = useRef<HTMLDivElement>(null);
   const clipsMapRef = useRef<Map<string, Clip>>(new Map());
 
-  // Keep clips lookup up to date
   useEffect(() => {
     clipsMapRef.current = new Map(clips.map((c) => [c.id, c]));
   }, [clips]);
-
-  // Reload Twick data model whenever clips change
   useEffect(() => {
-    editor.loadProject({
-      tracks: buildInitialData(clips).tracks,
-      version: 1,
-    });
+    editor.loadProject({ tracks: buildInitialData(clips).tracks, version: 1 });
   }, [editor, clips]);
+
+  const handleHandleMouseDown = useDragHandler({
+    timelineRef,
+    clipsMapRef,
+    editor,
+    duration,
+    onSeek,
+    onClipTrimmed,
+  });
 
   function handleTimelineClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!timelineRef.current || duration === 0) return;
     const rect = timelineRef.current.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    onSeek(ratio * duration);
-  }
-
-  function handleHandleMouseDown(e: React.MouseEvent, clipId: string, side: "start" | "end") {
-    e.stopPropagation();
-    e.preventDefault();
-
-    const clipInitial = clipsMapRef.current.get(clipId);
-    let dragValue = clipInitial
-      ? side === "start"
-        ? clipInitial.start_sec
-        : clipInitial.end_sec
-      : 0;
-    let lastSeekMs = 0;
-
-    function onMouseMove(ev: MouseEvent) {
-      if (!timelineRef.current || duration === 0) return;
-      const rect = timelineRef.current.getBoundingClientRect();
-      dragValue = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width)) * duration;
-      const now = Date.now();
-      if (now - lastSeekMs >= 100) {
-        onSeek(dragValue);
-        lastSeekMs = now;
-      }
-    }
-
-    function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", onTouchEnd);
-
-      const clip = clipsMapRef.current.get(clipId);
-      const patchValue = clip
-        ? side === "start"
-          ? Math.min(dragValue, clip.end_sec - 0.5)
-          : Math.max(dragValue, clip.start_sec + 0.5)
-        : dragValue;
-
-      const newStart = side === "start" ? patchValue : (clip?.start_sec ?? 0);
-      const newEnd = side === "end" ? patchValue : (clip?.end_sec ?? duration);
-
-      // Trim via Twick data model
-      const data = editor.getTimelineData();
-      const track = data?.tracks.find((t) => t.getId() === CLIPS_TRACK_ID);
-      const el = track?.getElementById(clipId);
-      if (el) {
-        editor.trimElement(el as TrackElement, newStart, newEnd);
-      }
-
-      onClipTrimmed?.(clipId, newStart, newEnd);
-    }
-
-    function onTouchMove(ev: TouchEvent) {
-      ev.preventDefault();
-      onMouseMove({ clientX: ev.touches[0].clientX } as MouseEvent);
-    }
-
-    function onTouchEnd() {
-      onMouseUp();
-    }
-
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-    window.addEventListener("touchmove", onTouchMove, { passive: false });
-    window.addEventListener("touchend", onTouchEnd);
+    onSeek(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * duration);
   }
 
   return (
@@ -179,72 +257,18 @@ function TimelineContent({
       className="relative h-20 bg-gray-900 border-t border-gray-800 cursor-pointer shrink-0"
       onClick={handleTimelineClick}
     >
-      {clips &&
-        duration > 0 &&
-        clips.map((clip) => {
-          const left = (clip.start_sec / duration) * 100;
-          const width = ((clip.end_sec - clip.start_sec) / duration) * 100;
-          const isSel = selectedClipIds.size > 0 && selectedClipIds.has(clip.id);
-          const isInFilter = !selectedTopic || clip.topic === selectedTopic;
-          const isChecked = selectedClipIds.has(clip.id);
-          let dimClass = "";
-          if (!isInFilter) dimClass = "opacity-30";
-          else if (!isChecked && selectedClipIds.size > 0) dimClass = "opacity-60";
-
-          return (
-            <div
-              key={clip.id}
-              className={`absolute top-2 bottom-2 rounded ${clipBarColor(clip, isSel)} ${isSel ? "z-10" : "z-0"} ${dimClass}`}
-              style={{ left: `${left}%`, width: `${width}%` }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onClipClick?.(clip.id);
-              }}
-            >
-              {/* Start handle */}
-              <div
-                className="absolute left-0 top-0 bottom-0 w-6 cursor-ew-resize flex items-center justify-center touch-none"
-                onMouseDown={(e) => handleHandleMouseDown(e, clip.id, "start")}
-                onTouchStart={(e) => {
-                  e.stopPropagation();
-                  handleHandleMouseDown(
-                    {
-                      clientX: e.touches[0].clientX,
-                      stopPropagation: () => {},
-                      preventDefault: () => {},
-                    } as unknown as React.MouseEvent,
-                    clip.id,
-                    "start"
-                  );
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="w-1.5 h-8 bg-white/80 rounded-full" />
-              </div>
-              {/* End handle */}
-              <div
-                className="absolute right-0 top-0 bottom-0 w-6 cursor-ew-resize flex items-center justify-center touch-none"
-                onMouseDown={(e) => handleHandleMouseDown(e, clip.id, "end")}
-                onTouchStart={(e) => {
-                  e.stopPropagation();
-                  handleHandleMouseDown(
-                    {
-                      clientX: e.touches[0].clientX,
-                      stopPropagation: () => {},
-                      preventDefault: () => {},
-                    } as unknown as React.MouseEvent,
-                    clip.id,
-                    "end"
-                  );
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="w-1.5 h-8 bg-white/80 rounded-full" />
-              </div>
-            </div>
-          );
-        })}
-      {/* Playhead */}
+      {duration > 0 &&
+        clips.map((clip) => (
+          <ClipBar
+            key={clip.id}
+            clip={clip}
+            duration={duration}
+            selectedClipIds={selectedClipIds}
+            selectedTopic={selectedTopic}
+            onClipClick={onClipClick}
+            onHandleMouseDown={handleHandleMouseDown}
+          />
+        ))}
       {duration > 0 && (
         <div
           className="absolute top-0 bottom-0 w-px bg-white z-20 pointer-events-none"
@@ -261,14 +285,13 @@ function TimelineContent({
   );
 }
 
-// ── exported default — wraps in TimelineProvider ─────────────────────────────
+// ── exported default — wraps in TimelineProvider ──────────────────────────────
 
 export default function TwickTimelineInner(props: TwickTimelineProps) {
-  const initialData = buildInitialData(props.clips);
   return (
     <TimelineProvider
       contextId="twick-clips"
-      initialData={initialData}
+      initialData={buildInitialData(props.clips)}
       analytics={{ enabled: false }}
     >
       <TimelineContent {...props} />
