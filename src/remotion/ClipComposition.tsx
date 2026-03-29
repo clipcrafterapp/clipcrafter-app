@@ -97,16 +97,18 @@ function CaptionPage({
   style,
   highlightColor,
   captionPosition = "bottom",
+  pageStartMs,
 }: {
   page: ReturnType<typeof createTikTokStyleCaptions>["pages"][number];
   style: React.CSSProperties;
   highlightColor: string;
   captionPosition?: "top" | "center" | "bottom";
+  pageStartMs: number; // absolute ms from clip start when this Sequence begins
 }) {
-  const frame = useCurrentFrame();
+  const frame = useCurrentFrame(); // 0-based within this Sequence
   const { fps } = useVideoConfig();
-  const currentMs = (frame / fps) * 1000;
-  const absoluteMs = page.startMs + currentMs;
+  // absoluteMs = where we are in the clip (ms), matching token fromMs/toMs values
+  const absoluteMs = pageStartMs + (frame / fps) * 1000;
 
   return (
     <AbsoluteFill
@@ -204,6 +206,7 @@ export const ClipComposition: React.FC<ClipCompositionProps> = ({
                 style={style}
                 highlightColor={highlightColor}
                 captionPosition={captionPosition}
+                pageStartMs={page.startMs}
               />
             </Sequence>
           );
