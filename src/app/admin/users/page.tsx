@@ -64,7 +64,10 @@ function UserRow({ user, disabled, onSetPlan, onResetUsage, onGrantAlpha }: RowP
   return (
     <tr className="border-b border-gray-800 hover:bg-gray-800/40">
       <td className="px-4 py-3 font-mono text-xs">
-        <Link href={`/admin/users/${user.id}`} className="text-violet-400 hover:text-violet-300 hover:underline">
+        <Link
+          href={`/admin/users/${user.id}`}
+          className="text-violet-400 hover:text-violet-300 hover:underline"
+        >
           {user.email}
         </Link>
       </td>

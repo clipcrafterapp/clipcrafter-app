@@ -91,7 +91,8 @@ interface LLMCallResult {
 }
 
 function buildAuthHeaders(provider: string, apiKey: string): Record<string, string> {
-  if (provider === "sarvam") return { "Content-Type": "application/json", "api-subscription-key": apiKey };
+  if (provider === "sarvam")
+    return { "Content-Type": "application/json", "api-subscription-key": apiKey };
   return { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
 }
 
@@ -135,7 +136,11 @@ async function callLLMWithModel({
   if (!content) throw new Error(`LLM returned empty content (${provider}/${model})`);
 
   console.warn(`[llm] ${provider}/${model} → ${content.length} chars`);
-  return { content, inputTokens: data.usage?.prompt_tokens, outputTokens: data.usage?.completion_tokens };
+  return {
+    content,
+    inputTokens: data.usage?.prompt_tokens,
+    outputTokens: data.usage?.completion_tokens,
+  };
 }
 
 function isRetryableError(msg: string): boolean {

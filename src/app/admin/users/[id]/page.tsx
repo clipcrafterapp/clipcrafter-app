@@ -78,7 +78,11 @@ function fmt(s: number): string {
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(iso).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -121,7 +125,8 @@ function DailyUsageChart({ data }: { data: DailyUsage[] }) {
   );
 }
 
-const BTN = "px-3 py-1.5 text-xs rounded bg-gray-800 border border-gray-700 hover:bg-gray-700 transition-colors disabled:opacity-50";
+const BTN =
+  "px-3 py-1.5 text-xs rounded bg-gray-800 border border-gray-700 hover:bg-gray-700 transition-colors disabled:opacity-50";
 
 function UserHeader({
   user,
@@ -138,14 +143,19 @@ function UserHeader({
 }) {
   return (
     <div>
-      <Link href="/admin/users" className="text-sm text-gray-400 hover:text-white inline-block mb-3">
+      <Link
+        href="/admin/users"
+        className="text-sm text-gray-400 hover:text-white inline-block mb-3"
+      >
         ← Users
       </Link>
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-white">{user.full_name ?? user.email}</h1>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PLAN_COLORS[user.plan] ?? PLAN_COLORS.free}`}>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${PLAN_COLORS[user.plan] ?? PLAN_COLORS.free}`}
+            >
               {user.plan}
             </span>
           </div>
@@ -160,11 +170,17 @@ function UserHeader({
             className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-violet-500 disabled:opacity-50"
           >
             {["free", "starter", "pro", "unlimited"].map((p) => (
-              <option key={p} value={p}>{p}</option>
+              <option key={p} value={p}>
+                {p}
+              </option>
             ))}
           </select>
-          <button type="button" disabled={disabled} onClick={onResetUsage} className={BTN}>Reset Usage</button>
-          <button type="button" disabled={disabled} onClick={onGrantAlpha} className={BTN}>Grant Alpha 30d</button>
+          <button type="button" disabled={disabled} onClick={onResetUsage} className={BTN}>
+            Reset Usage
+          </button>
+          <button type="button" disabled={disabled} onClick={onGrantAlpha} className={BTN}>
+            Grant Alpha 30d
+          </button>
         </div>
       </div>
     </div>
@@ -176,8 +192,16 @@ function StatsRow({ stats, plan }: { stats: Stats; plan: string }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <StatCard label="Total processing" value={fmt(stats.totalUsageSeconds)} />
-      <StatCard label="This month" value={fmt(stats.thisMonthUsageSeconds)} sub={`/ ${fmt(planLimit)} limit`} />
-      <StatCard label="Projects" value={String(stats.totalProjects)} sub={`${stats.thisMonthProjects} this month`} />
+      <StatCard
+        label="This month"
+        value={fmt(stats.thisMonthUsageSeconds)}
+        sub={`/ ${fmt(planLimit)} limit`}
+      />
+      <StatCard
+        label="Projects"
+        value={String(stats.totalProjects)}
+        sub={`${stats.thisMonthProjects} this month`}
+      />
       <StatCard label="Exports" value={String(stats.totalExports)} sub="clips exported" />
     </div>
   );
@@ -193,29 +217,45 @@ function ProjectsTable({ projects }: { projects: RecentProject[] }) {
         <thead>
           <tr className="border-b border-gray-800">
             {["Title", "Status", "Created", "Clips"].map((h) => (
-              <th key={h} className="text-left px-4 py-3 text-gray-500 text-xs uppercase tracking-wide font-medium">{h}</th>
+              <th
+                key={h}
+                className="text-left px-4 py-3 text-gray-500 text-xs uppercase tracking-wide font-medium"
+              >
+                {h}
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
           {projects.length === 0 ? (
-            <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-500">No projects</td></tr>
-          ) : projects.map((p) => (
-            <tr key={p.id} className="border-b border-gray-800 hover:bg-gray-800/40">
-              <td className="px-4 py-3">
-                <Link href={`/dashboard/projects/${p.id}/studio`} className="text-violet-400 hover:text-violet-300 hover:underline truncate block max-w-xs">
-                  {p.title}
-                </Link>
+            <tr>
+              <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                No projects
               </td>
-              <td className="px-4 py-3">
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[p.status] ?? STATUS_COLORS.pending}`}>
-                  {p.status}
-                </span>
-              </td>
-              <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(p.created_at)}</td>
-              <td className="px-4 py-3 text-gray-300 text-xs">{p.clip_count}</td>
             </tr>
-          ))}
+          ) : (
+            projects.map((p) => (
+              <tr key={p.id} className="border-b border-gray-800 hover:bg-gray-800/40">
+                <td className="px-4 py-3">
+                  <Link
+                    href={`/dashboard/projects/${p.id}/studio`}
+                    className="text-violet-400 hover:text-violet-300 hover:underline truncate block max-w-xs"
+                  >
+                    {p.title}
+                  </Link>
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[p.status] ?? STATUS_COLORS.pending}`}
+                  >
+                    {p.status}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(p.created_at)}</td>
+                <td className="px-4 py-3 text-gray-300 text-xs">{p.clip_count}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>
@@ -253,14 +293,18 @@ export default function AdminUserDetailPage() {
     setTick((t) => t + 1);
   }
 
-  if (error) return (
-    <div className="space-y-4">
-      <Link href="/admin/users" className="text-sm text-gray-400 hover:text-white">← Users</Link>
-      <p className="text-red-400">{error}</p>
-    </div>
-  );
+  if (error)
+    return (
+      <div className="space-y-4">
+        <Link href="/admin/users" className="text-sm text-gray-400 hover:text-white">
+          ← Users
+        </Link>
+        <p className="text-red-400">{error}</p>
+      </div>
+    );
 
-  if (!data) return <div className="flex items-center justify-center py-24 text-gray-500">Loading…</div>;
+  if (!data)
+    return <div className="flex items-center justify-center py-24 text-gray-500">Loading…</div>;
 
   const { user, stats, dailyUsage, recentProjects } = data;
 
@@ -269,9 +313,17 @@ export default function AdminUserDetailPage() {
       <UserHeader
         user={user}
         disabled={actionLoading}
-        onSetPlan={(plan) => { void patchUser({ plan }); }}
-        onResetUsage={() => { if (confirm("Reset daily usage to 0?")) void patchUser({ daily_usage_seconds: 0 }); }}
-        onGrantAlpha={() => { void patchUser({ alpha_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }); }}
+        onSetPlan={(plan) => {
+          void patchUser({ plan });
+        }}
+        onResetUsage={() => {
+          if (confirm("Reset daily usage to 0?")) void patchUser({ daily_usage_seconds: 0 });
+        }}
+        onGrantAlpha={() => {
+          void patchUser({
+            alpha_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          });
+        }}
       />
       <StatsRow stats={stats} plan={user.plan} />
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">

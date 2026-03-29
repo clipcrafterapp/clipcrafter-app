@@ -75,7 +75,11 @@ async function fetchProjectStats(userId: string, startOfMonth: string) {
     totalExports = count ?? 0;
   }
 
-  return { totalProjects: totalProjects ?? 0, thisMonthProjects: thisMonthProjects ?? 0, totalExports };
+  return {
+    totalProjects: totalProjects ?? 0,
+    thisMonthProjects: thisMonthProjects ?? 0,
+    totalExports,
+  };
 }
 
 async function fetchRecentProjects(userId: string) {
@@ -86,7 +90,7 @@ async function fetchRecentProjects(userId: string) {
     .order("created_at", { ascending: false })
     .limit(20);
 
-  return (data as ProjectRaw[] ?? []).map((p) => ({
+  return ((data as ProjectRaw[]) ?? []).map((p) => ({
     id: p.id,
     title: p.title,
     status: p.status,
