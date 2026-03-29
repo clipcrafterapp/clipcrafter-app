@@ -43,11 +43,9 @@ async function resolveProjectOwnership(
 async function buildVideoUrl(r2Key: string | null): Promise<string> {
   if (!r2Key) return "";
   if (r2Key.startsWith("http")) return r2Key; // YouTube URL
-  return getSignedUrl(
-    r2Client,
-    new GetObjectCommand({ Bucket: R2_BUCKET, Key: r2Key }),
-    { expiresIn: 7 * 3600 }
-  );
+  return getSignedUrl(r2Client, new GetObjectCommand({ Bucket: R2_BUCKET, Key: r2Key }), {
+    expiresIn: 7 * 3600,
+  });
 }
 
 export async function GET(
@@ -108,16 +106,16 @@ type ClipPatchBody = {
   aspect_ratio?: string;
 };
 
-function validateTimings(
-  body: ClipPatchBody
-): { error: Response } | null {
+function validateTimings(body: ClipPatchBody): { error: Response } | null {
   const { start_sec, end_sec } = body;
   if (start_sec !== undefined && start_sec < 0)
     return { error: Response.json({ error: "start_sec must be >= 0" }, { status: 400 }) };
   if (end_sec !== undefined && end_sec < 0)
     return { error: Response.json({ error: "end_sec must be >= 0" }, { status: 400 }) };
   if (start_sec !== undefined && end_sec !== undefined && start_sec >= end_sec)
-    return { error: Response.json({ error: "start_sec must be less than end_sec" }, { status: 400 }) };
+    return {
+      error: Response.json({ error: "start_sec must be less than end_sec" }, { status: 400 }),
+    };
   return null;
 }
 

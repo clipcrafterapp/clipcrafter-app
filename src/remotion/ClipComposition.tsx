@@ -49,7 +49,12 @@ const HIGHLIGHT_COLORS: Record<string, string> = {
 // ── Caption position / size presets ──────────────────────────────────────────
 
 const CAPTION_POSITION_STYLES: Record<string, React.CSSProperties> = {
-  bottom: { justifyContent: "flex-end", paddingBottom: "10%", paddingLeft: "5%", paddingRight: "5%" },
+  bottom: {
+    justifyContent: "flex-end",
+    paddingBottom: "10%",
+    paddingLeft: "5%",
+    paddingRight: "5%",
+  },
   center: { justifyContent: "center", paddingLeft: "5%", paddingRight: "5%" },
   top: { justifyContent: "flex-start", paddingTop: "10%", paddingLeft: "5%", paddingRight: "5%" },
 };
@@ -194,7 +199,12 @@ export const ClipComposition: React.FC<ClipCompositionProps> = ({
 
           return (
             <Sequence key={i} from={startFrame} durationInFrames={duration}>
-              <CaptionPage page={page} style={style} highlightColor={highlightColor} captionPosition={captionPosition} />
+              <CaptionPage
+                page={page}
+                style={style}
+                highlightColor={highlightColor}
+                captionPosition={captionPosition}
+              />
             </Sequence>
           );
         })}

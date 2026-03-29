@@ -360,7 +360,10 @@ export function ClipCard({
       }}
       className={`relative bg-gray-900 border rounded-xl p-4 transition-all cursor-pointer ${clipBorderClass(isSelected, clip.status)}`}
     >
-      <div className="absolute top-3 right-3 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="absolute top-3 right-3 flex items-center gap-2"
+        onClick={(e) => e.stopPropagation()}
+      >
         {projectId && (
           <Link
             href={`/dashboard/projects/${projectId}/clips/${clip.id}`}
@@ -369,7 +372,15 @@ export function ClipCard({
             aria-label="Edit clip"
             title="Edit clip"
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
             </svg>

@@ -28,7 +28,9 @@ function BackBar({ projectId, title }: { projectId: string; title: string }) {
         Back to project
       </Link>
       <span className="text-gray-700 select-none">|</span>
-      <span className="text-sm text-gray-300 truncate flex-1 min-w-0">{title || "Untitled clip"}</span>
+      <span className="text-sm text-gray-300 truncate flex-1 min-w-0">
+        {title || "Untitled clip"}
+      </span>
     </div>
   );
 }
@@ -84,11 +86,7 @@ export default function ClipEditorPage({
         </div>
 
         {/* Edit panel — 40% on desktop */}
-        <ClipEditPanel
-          projectId={projectId}
-          clipId={clipId}
-          editor={editor}
-        />
+        <ClipEditPanel projectId={projectId} clipId={clipId} editor={editor} />
       </div>
 
       {editor.videoDuration > 0 && (

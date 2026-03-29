@@ -75,7 +75,9 @@ function useExportManager(
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
       try {
-        const d = (await (await fetch(`/api/projects/${projectId}/clips/${clipId}`)).json()) as ClipEditorData;
+        const d = (await (
+          await fetch(`/api/projects/${projectId}/clips/${clipId}`)
+        ).json()) as ClipEditorData;
         const s = d.clip.status;
         setClipStatus(s);
         if (s === "exported") {
@@ -89,7 +91,9 @@ function useExportManager(
           pollRef.current = null;
           if (s === "pending") toast.error("Export failed — try again");
         }
-      } catch { /* silent */ }
+      } catch {
+        /* silent */
+      }
     }, 3000);
   }, [projectId, clipId]);
 
@@ -100,7 +104,9 @@ function useExportManager(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(getExportPayload()),
       });
-    } catch { /* non-blocking */ }
+    } catch {
+      /* non-blocking */
+    }
     setExporting(true);
     setClipStatus("exporting");
     try {
@@ -143,24 +149,41 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
   const endSecRef = useRef(endSec);
   const titleRef = useRef(title);
   const formatRef = useRef(format);
-  useEffect(() => { startSecRef.current = startSec; }, [startSec]);
-  useEffect(() => { endSecRef.current = endSec; }, [endSec]);
-  useEffect(() => { titleRef.current = title; }, [title]);
-  useEffect(() => { formatRef.current = format; }, [format]);
+  useEffect(() => {
+    startSecRef.current = startSec;
+  }, [startSec]);
+  useEffect(() => {
+    endSecRef.current = endSec;
+  }, [endSec]);
+  useEffect(() => {
+    titleRef.current = title;
+  }, [title]);
+  useEffect(() => {
+    formatRef.current = format;
+  }, [format]);
 
-  const getExportPayload = useCallback(() => ({
-    clip_title: titleRef.current,
-    start_sec: startSecRef.current,
-    end_sec: endSecRef.current,
-    aspect_ratio: formatRef.current,
-  }), []);
+  const getExportPayload = useCallback(
+    () => ({
+      clip_title: titleRef.current,
+      start_sec: startSecRef.current,
+      end_sec: endSecRef.current,
+      aspect_ratio: formatRef.current,
+    }),
+    []
+  );
 
-  const { exporting, clipStatus, setClipStatus, pollRef, handleExport } =
-    useExportManager(projectId, clipId, getExportPayload);
+  const { exporting, clipStatus, setClipStatus, pollRef, handleExport } = useExportManager(
+    projectId,
+    clipId,
+    getExportPayload
+  );
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/clips/${clipId}`)
-      .then((r) => { if (!r.ok) throw new Error(); return r.json() as Promise<ClipEditorData>; })
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json() as Promise<ClipEditorData>;
+      })
       .then((d) => {
         setData(d);
         setStartSec(d.clip.start_sec);
@@ -174,10 +197,13 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
       .finally(() => setLoading(false));
   }, [projectId, clipId, setClipStatus]);
 
-  useEffect(() => () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (pollRef.current) clearInterval(pollRef.current);
-  }, [timerRef, pollRef]);
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (pollRef.current) clearInterval(pollRef.current);
+    },
+    [timerRef, pollRef]
+  );
 
   const handleClipTrimmed = useCallback(
     (id: string, ns: number, ne: number) => {
@@ -191,11 +217,28 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
   );
 
   return {
-    data, loading,
-    startSec, endSec, title, captionPosition, captionSize, format,
-    currentTime, videoDuration, exporting, clipStatus,
-    setStartSec, setEndSec, setTitle, setCaptionPosition, setCaptionSize, setFormat,
-    setCurrentTime, setVideoDuration,
-    schedulePatch, handleExport, handleClipTrimmed,
+    data,
+    loading,
+    startSec,
+    endSec,
+    title,
+    captionPosition,
+    captionSize,
+    format,
+    currentTime,
+    videoDuration,
+    exporting,
+    clipStatus,
+    setStartSec,
+    setEndSec,
+    setTitle,
+    setCaptionPosition,
+    setCaptionSize,
+    setFormat,
+    setCurrentTime,
+    setVideoDuration,
+    schedulePatch,
+    handleExport,
+    handleClipTrimmed,
   };
 }

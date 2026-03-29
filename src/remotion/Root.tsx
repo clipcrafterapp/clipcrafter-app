@@ -33,7 +33,8 @@ export const RemotionRoot: React.FC = () => {
       calculateMetadata={({ props }) => {
         const p = props as unknown as ClipCompositionProps;
         const durationSec = p.endSec - p.startSec;
-        const dims = ASPECT_RATIO_DIMENSIONS[p.aspectRatio ?? "9:16"] ?? ASPECT_RATIO_DIMENSIONS["9:16"];
+        const dims =
+          ASPECT_RATIO_DIMENSIONS[p.aspectRatio ?? "9:16"] ?? ASPECT_RATIO_DIMENSIONS["9:16"];
         return {
           durationInFrames: Math.max(1, Math.round(durationSec * 30)),
           width: dims.width,
