@@ -66,8 +66,8 @@ export function ClipRemotionPlayerInner({
       fps={fps}
       style={{
         width: "100%",
+        height: "100%",
         borderRadius: "12px",
-        aspectRatio: aspectRatio === "16:9" ? "16/9" : "9/16",
       }}
       controls
       clickToPlay

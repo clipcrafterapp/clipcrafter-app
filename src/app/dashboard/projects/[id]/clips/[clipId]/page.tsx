@@ -79,18 +79,28 @@ export default function ClipEditorPage({
       <BackBar projectId={projectId} title={editor.title} />
 
       <div className="flex flex-col lg:flex-row flex-1 min-h-0">
-        {/* Player — 60% on desktop */}
-        <div className="lg:w-[60%] aspect-video lg:aspect-auto bg-black relative min-h-[200px] lg:min-h-[400px] flex items-center justify-center p-4">
-          <ClipRemotionPlayer
-            videoSrc={editor.data.videoUrl}
-            startSec={editor.startSec}
-            endSec={editor.endSec}
-            captions={editor.captions}
-            captionPosition={editor.captionPosition}
-            captionSize={editor.captionSize}
-            captionStyle={captionStyle}
-            aspectRatio={editor.format}
-          />
+        {/* Player — 60% on desktop, centers the composition at its native aspect ratio */}
+        <div className="lg:w-[60%] bg-black flex items-center justify-center p-4 overflow-hidden min-h-[300px] lg:min-h-0">
+          <div
+            className="w-full h-full flex items-center justify-center"
+            style={{
+              // Constrain the player to fit inside the container at the correct aspect ratio
+              aspectRatio: editor.format === "16:9" ? "16/9" : "9/16",
+              maxHeight: "100%",
+              maxWidth: editor.format === "16:9" ? "100%" : "50%",
+            }}
+          >
+            <ClipRemotionPlayer
+              videoSrc={editor.data.videoUrl}
+              startSec={editor.startSec}
+              endSec={editor.endSec}
+              captions={editor.captions}
+              captionPosition={editor.captionPosition}
+              captionSize={editor.captionSize}
+              captionStyle={captionStyle}
+              aspectRatio={editor.format}
+            />
+          </div>
         </div>
 
         {/* Edit panel — 40% on desktop */}
