@@ -70,7 +70,8 @@ interface ProjectHandlerOpts {
 }
 
 function buildProjectHandlers(opts: ProjectHandlerOpts) {
-  const { id, setLoading, fetchStatus, clips, setClips, setClipsStatus, setSelectedTopic, s } = opts;
+  const { id, setLoading, fetchStatus, clips, setClips, setClipsStatus, setSelectedTopic, s } =
+    opts;
   return {
     handleRetry: makeHandleRetry(id, { setLoading, fetchStatus }),
     handleDelete: makeHandleDelete(id),

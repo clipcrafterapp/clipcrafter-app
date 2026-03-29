@@ -205,7 +205,11 @@ export function makeHandleExportBatch(
       return;
     }
 
-    posthog.capture("export_started", { clipCount: eligibleIds.length, withCaptions, skippedCount });
+    posthog.capture("export_started", {
+      clipCount: eligibleIds.length,
+      withCaptions,
+      skippedCount,
+    });
     const toastId = toast.loading(
       `Queuing ${eligibleIds.length} clip${eligibleIds.length > 1 ? "s" : ""} for export…`
     );
