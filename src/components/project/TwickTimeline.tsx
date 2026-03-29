@@ -8,7 +8,9 @@ import type { TwickTimelineProps } from "./TwickTimelineInner";
 //  2. Lazy-load the bundle (~5 MB) separately from the main chunk
 const TwickTimelineInner = dynamic(() => import("./TwickTimelineInner"), {
   ssr: false,
-  loading: () => <div className="h-20 bg-gray-900 border-t border-gray-800 animate-pulse shrink-0" />,
+  loading: () => (
+    <div className="h-20 bg-gray-900 border-t border-gray-800 animate-pulse shrink-0" />
+  ),
 });
 
 export type { TwickTimelineProps };

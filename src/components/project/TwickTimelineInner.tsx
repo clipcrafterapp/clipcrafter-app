@@ -108,11 +108,7 @@ function TimelineContent({
     onSeek(ratio * duration);
   }
 
-  function handleHandleMouseDown(
-    e: React.MouseEvent,
-    clipId: string,
-    side: "start" | "end"
-  ) {
+  function handleHandleMouseDown(e: React.MouseEvent, clipId: string, side: "start" | "end") {
     e.stopPropagation();
     e.preventDefault();
 
@@ -127,8 +123,7 @@ function TimelineContent({
     function onMouseMove(ev: MouseEvent) {
       if (!timelineRef.current || duration === 0) return;
       const rect = timelineRef.current.getBoundingClientRect();
-      dragValue =
-        Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width)) * duration;
+      dragValue = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width)) * duration;
       const now = Date.now();
       if (now - lastSeekMs >= 100) {
         onSeek(dragValue);
@@ -213,7 +208,11 @@ function TimelineContent({
                 onTouchStart={(e) => {
                   e.stopPropagation();
                   handleHandleMouseDown(
-                    { clientX: e.touches[0].clientX, stopPropagation: () => {}, preventDefault: () => {} } as unknown as React.MouseEvent,
+                    {
+                      clientX: e.touches[0].clientX,
+                      stopPropagation: () => {},
+                      preventDefault: () => {},
+                    } as unknown as React.MouseEvent,
                     clip.id,
                     "start"
                   );
@@ -229,7 +228,11 @@ function TimelineContent({
                 onTouchStart={(e) => {
                   e.stopPropagation();
                   handleHandleMouseDown(
-                    { clientX: e.touches[0].clientX, stopPropagation: () => {}, preventDefault: () => {} } as unknown as React.MouseEvent,
+                    {
+                      clientX: e.touches[0].clientX,
+                      stopPropagation: () => {},
+                      preventDefault: () => {},
+                    } as unknown as React.MouseEvent,
                     clip.id,
                     "end"
                   );
