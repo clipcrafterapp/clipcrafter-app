@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
 import Script from "next/script";
+import { toast } from "sonner";
 
 type BillingData = {
   plan: string;
@@ -55,6 +56,63 @@ const PLANS = [
   },
 ];
 
+const PLAN_ORDER: Record<string, number> = {
+  free: 0,
+  trial: 0,
+  starter: 1,
+  pro: 2,
+  unlimited: 3,
+};
+
+type PlanKey = "starter" | "pro" | "unlimited";
+type PlanHandler = (plan: PlanKey) => void;
+
+function PlanCardAction({
+  isCurrent,
+  isHigher,
+  isLower,
+  hasActiveSubscription,
+  planKey,
+  onSubscribe,
+  onUpgrade,
+  subscribing,
+  upgrading,
+}: {
+  isCurrent: boolean;
+  isHigher: boolean;
+  isLower: boolean;
+  hasActiveSubscription: boolean;
+  planKey: PlanKey;
+  onSubscribe: PlanHandler;
+  onUpgrade: PlanHandler;
+  subscribing: boolean;
+  upgrading: boolean;
+}) {
+  const btnBase =
+    "block w-full text-center rounded-lg px-4 py-2.5 text-sm font-semibold disabled:opacity-50 transition-colors";
+  if (isCurrent)
+    return <div className="text-center py-2 text-sm text-violet-400 font-semibold">Current Plan</div>;
+  if (isHigher && hasActiveSubscription)
+    return (
+      <button type="button" onClick={() => onUpgrade(planKey)} disabled={upgrading} className={`${btnBase} bg-violet-600 hover:bg-violet-500`}>
+        {upgrading ? "Upgrading…" : "Upgrade"}
+      </button>
+    );
+  if (isHigher)
+    return (
+      <button type="button" onClick={() => onSubscribe(planKey)} disabled={subscribing} className={`${btnBase} bg-violet-600 hover:bg-violet-500`}>
+        {subscribing ? "Loading…" : "Upgrade"}
+      </button>
+    );
+  if (isLower)
+    return (
+      <button type="button" onClick={() => onUpgrade(planKey)} disabled={upgrading} title="Takes effect at end of billing cycle" className={`${btnBase} border border-gray-600 text-gray-400 hover:border-gray-400 hover:text-gray-200`}>
+        {upgrading ? "Updating…" : "Downgrade"}
+      </button>
+    );
+  return null;
+}
+
 function PlanCard({
   name,
   price,
@@ -62,18 +120,31 @@ function PlanCard({
   features,
   planKey,
   isCurrent,
+  planRank,
+  currentPlanRank,
+  hasActiveSubscription,
   onSubscribe,
-  loading,
+  onUpgrade,
+  subscribing,
+  upgrading,
 }: {
   name: string;
   price: string;
   originalPrice?: string;
   features: string[];
-  planKey: "starter" | "pro" | "unlimited";
+  planKey: PlanKey;
   isCurrent: boolean;
-  onSubscribe: (plan: "starter" | "pro" | "unlimited") => void;
-  loading: boolean;
+  planRank: number;
+  currentPlanRank: number;
+  hasActiveSubscription: boolean;
+  onSubscribe: PlanHandler;
+  onUpgrade: PlanHandler;
+  subscribing: boolean;
+  upgrading: boolean;
 }) {
+  const isHigher = planRank > currentPlanRank;
+  const isLower = planRank < currentPlanRank && hasActiveSubscription;
+
   return (
     <div
       className={`rounded-xl border p-6 flex flex-col gap-4 ${
@@ -105,18 +176,17 @@ function PlanCard({
           </li>
         ))}
       </ul>
-      {isCurrent ? (
-        <div className="text-center py-2 text-sm text-violet-400 font-semibold">Current Plan</div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => onSubscribe(planKey)}
-          disabled={loading}
-          className="block w-full text-center rounded-lg px-4 py-2.5 text-sm font-semibold bg-violet-600 hover:bg-violet-500 disabled:opacity-50 transition-colors"
-        >
-          {loading ? "Loading…" : `Subscribe to ${name}`}
-        </button>
-      )}
+      <PlanCardAction
+        isCurrent={isCurrent}
+        isHigher={isHigher}
+        isLower={isLower}
+        hasActiveSubscription={hasActiveSubscription}
+        planKey={planKey}
+        onSubscribe={onSubscribe}
+        onUpgrade={onUpgrade}
+        subscribing={subscribing}
+        upgrading={upgrading}
+      />
     </div>
   );
 }
@@ -173,6 +243,12 @@ async function startRazorpayCheckout(
           ? "Pro Plan — ₹2,499/month"
           : "Starter Plan — ₹999/month",
     image: "/favicon.ico",
+    method: {
+      card: true,
+      upi: true,
+      netbanking: false,
+      wallet: false,
+    },
     prefill: {
       name: user.fullName ?? "",
       email: user.primaryEmailAddress?.emailAddress ?? "",
@@ -192,27 +268,34 @@ function useBilling() {
   const [billing, setBilling] = useState<BillingData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetch("/api/billing/usage")
-      .then((r) => r.json())
-      .then((d: BillingData & { razorpaySubscriptionId?: string }) => {
-        setBilling({
-          plan: d.plan,
-          isTrialActive: d.isTrialActive,
-          trialEndsAt: d.trialEndsAt,
-          razorpaySubscriptionId: d.razorpaySubscriptionId ?? null,
-        });
-      })
-      .finally(() => setLoading(false));
+  const fetchBilling = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch("/api/billing/usage");
+      const d = await r.json();
+      setBilling({
+        plan: d.plan,
+        isTrialActive: d.isTrialActive,
+        trialEndsAt: d.trialEndsAt,
+        razorpaySubscriptionId: d.razorpaySubscriptionId ?? null,
+      });
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  return { billing, loading };
+  useEffect(() => {
+    fetchBilling();
+  }, [fetchBilling]);
+
+  return { billing, loading, refetch: fetchBilling };
 }
 
 export default function BillingPage() {
   const { user } = useUser();
-  const { billing, loading } = useBilling();
+  const { billing, loading, refetch } = useBilling();
   const [subscribing, setSubscribing] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
 
   async function handleSubscribe(plan: "starter" | "pro" | "unlimited") {
     if (!user) return;
@@ -225,13 +308,32 @@ export default function BillingPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
-        <div className="animate-pulse text-gray-400">Loading billing info…</div>
-      </div>
-    );
+  async function handleUpgrade(plan: "starter" | "pro" | "unlimited") {
+    setUpgrading(true);
+    try {
+      const res = await fetch("/api/billing/upgrade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Failed to update plan");
+        return;
+      }
+      toast.success(`Plan updated to ${plan}. Changes take effect at end of billing cycle.`);
+      await refetch();
+    } catch {
+      toast.error("Network error — please try again");
+    } finally {
+      setUpgrading(false);
+    }
   }
+
+  if (loading)
+    return <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center"><div className="animate-pulse text-gray-400">Loading billing info…</div></div>;
+
+  const currentPlanRank = PLAN_ORDER[billing?.plan ?? "free"] ?? 0;
 
   return (
     <>
@@ -249,8 +351,13 @@ export default function BillingPage() {
                 features={p.features}
                 planKey={p.key}
                 isCurrent={billing?.plan === p.key}
+                planRank={PLAN_ORDER[p.key]}
+                currentPlanRank={currentPlanRank}
+                hasActiveSubscription={!!billing?.razorpaySubscriptionId}
                 onSubscribe={handleSubscribe}
-                loading={subscribing}
+                onUpgrade={handleUpgrade}
+                subscribing={subscribing}
+                upgrading={upgrading}
               />
             ))}
           </div>
