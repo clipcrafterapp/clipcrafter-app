@@ -130,49 +130,9 @@ function useExportManager(
   return { exporting, clipStatus, setClipStatus, pollRef, handleExport };
 }
 
-// ── Edit fields hook ──────────────────────────────────────────────────────────
+// ── Stable ref tracker (keeps refs in sync with state values) ─────────────────
 
-function useClipEditFields(initialStatus: Clip["status"] = "pending") {
-  const [data, setData] = useState<ClipEditorData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [startSec, setStartSec] = useState(0);
-  const [endSec, setEndSec] = useState(0);
-  const [title, setTitle] = useState("");
-  const [captionPosition, setCaptionPosition] = useState<"top" | "center" | "bottom">("bottom");
-  const [captionSize, setCaptionSize] = useState<"sm" | "md" | "lg">("md");
-  const [format, setFormat] = useState<"9:16" | "16:9">("9:16");
-  const [currentTime, setCurrentTime] = useState(0);
-  const [videoDuration, setVideoDuration] = useState(0);
-  const [clipStatus, setClipStatus] = useState<Clip["status"]>(initialStatus);
-  return {
-    data,
-    setData,
-    loading,
-    setLoading,
-    startSec,
-    setStartSec,
-    endSec,
-    setEndSec,
-    title,
-    setTitle,
-    captionPosition,
-    setCaptionPosition,
-    captionSize,
-    setCaptionSize,
-    format,
-    setFormat,
-    currentTime,
-    setCurrentTime,
-    videoDuration,
-    setVideoDuration,
-    clipStatus,
-    setClipStatus,
-  };
-}
-
-// ── Export payload refs (keeps stale-closure-free snapshot for export) ────────
-
-function useExportPayloadRefs(startSec: number, endSec: number, title: string, format: string) {
+function useStableRefs(startSec: number, endSec: number, title: string, format: "9:16" | "16:9") {
   const startSecRef = useRef(startSec);
   const endSecRef = useRef(endSec);
   const titleRef = useRef(title);
@@ -189,35 +149,35 @@ function useExportPayloadRefs(startSec: number, endSec: number, title: string, f
   useEffect(() => {
     formatRef.current = format;
   }, [format]);
-  const getPayload = useCallback(
-    () => ({
-      clip_title: titleRef.current,
-      start_sec: startSecRef.current,
-      end_sec: endSecRef.current,
-      aspect_ratio: formatRef.current,
-    }),
-    []
-  );
-  return getPayload;
+  return { startSecRef, endSecRef, titleRef, formatRef };
 }
 
-// ── Main hook ─────────────────────────────────────────────────────────────────
+// ── Data loader ────────────────────────────────────────────────────────────────
 
-export function useClipEditor(projectId: string, clipId: string): ClipEditorState {
-  const fields = useClipEditFields();
-  const { timerRef, schedulePatch } = usePatchScheduler(projectId, clipId);
-  const getExportPayload = useExportPayloadRefs(
-    fields.startSec,
-    fields.endSec,
-    fields.title,
-    fields.format
-  );
-  const { exporting, clipStatus, setClipStatus, pollRef, handleExport } = useExportManager(
-    projectId,
-    clipId,
-    getExportPayload
-  );
-
+function useClipLoader(
+  projectId: string,
+  clipId: string,
+  setters: {
+    setData: (d: ClipEditorData) => void;
+    setStartSec: (v: number) => void;
+    setEndSec: (v: number) => void;
+    setTitle: (v: string) => void;
+    setCurrentTime: (v: number) => void;
+    setFormat: (v: "9:16" | "16:9") => void;
+    setClipStatus: (v: Clip["status"]) => void;
+    setLoading: (v: boolean) => void;
+  }
+) {
+  const {
+    setData,
+    setStartSec,
+    setEndSec,
+    setTitle,
+    setCurrentTime,
+    setFormat,
+    setClipStatus,
+    setLoading,
+  } = setters;
   useEffect(() => {
     fetch(`/api/projects/${projectId}/clips/${clipId}`)
       .then((r) => {
@@ -225,19 +185,91 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
         return r.json() as Promise<ClipEditorData>;
       })
       .then((d) => {
-        fields.setData(d);
-        fields.setStartSec(d.clip.start_sec);
-        fields.setEndSec(d.clip.end_sec);
-        fields.setTitle(d.clip.clip_title ?? d.clip.title ?? "");
-        fields.setCurrentTime(d.clip.start_sec);
+        setData(d);
+        setStartSec(d.clip.start_sec);
+        setEndSec(d.clip.end_sec);
+        setTitle(d.clip.clip_title ?? d.clip.title ?? "");
+        setCurrentTime(d.clip.start_sec);
         setClipStatus(d.clip.status);
-        if (d.clip.aspect_ratio === "16:9") fields.setFormat("16:9");
+        if ((d.clip as Clip & { aspect_ratio?: string }).aspect_ratio === "16:9") setFormat("16:9");
       })
       .catch(() => toast.error("Failed to load clip"))
-      .finally(() => fields.setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, clipId]);
+      .finally(() => setLoading(false));
+  }, [
+    projectId,
+    clipId,
+    setData,
+    setStartSec,
+    setEndSec,
+    setTitle,
+    setCurrentTime,
+    setFormat,
+    setClipStatus,
+    setLoading,
+  ]);
+}
 
+// ── Main hook ─────────────────────────────────────────────────────────────────
+
+function useEditorStyleState() {
+  const [captionPosition, setCaptionPosition] = useState<"top" | "center" | "bottom">("bottom");
+  const [captionSize, setCaptionSize] = useState<"sm" | "md" | "lg">("md");
+  const [format, setFormat] = useState<"9:16" | "16:9">("9:16");
+  const [currentTime, setCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  return {
+    captionPosition,
+    setCaptionPosition,
+    captionSize,
+    setCaptionSize,
+    format,
+    setFormat,
+    currentTime,
+    setCurrentTime,
+    videoDuration,
+    setVideoDuration,
+  };
+}
+
+// eslint-disable-next-line max-lines-per-function
+export function useClipEditor(projectId: string, clipId: string): ClipEditorState {
+  const [data, setData] = useState<ClipEditorData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [startSec, setStartSec] = useState(0);
+  const [endSec, setEndSec] = useState(0);
+  const [title, setTitle] = useState("");
+  const style = useEditorStyleState();
+  const { timerRef, schedulePatch } = usePatchScheduler(projectId, clipId);
+  const { startSecRef, endSecRef, titleRef, formatRef } = useStableRefs(
+    startSec,
+    endSec,
+    title,
+    style.format
+  );
+  const getExportPayload = useCallback(
+    () => ({
+      clip_title: titleRef.current,
+      start_sec: startSecRef.current,
+      end_sec: endSecRef.current,
+      aspect_ratio: formatRef.current,
+    }),
+    [titleRef, startSecRef, endSecRef, formatRef]
+  );
+  const { exporting, clipStatus, setClipStatus, pollRef, handleExport } = useExportManager(
+    projectId,
+    clipId,
+    getExportPayload
+  );
+  useClipLoader(projectId, clipId, {
+    setData,
+    setStartSec,
+    setEndSec,
+    setTitle,
+    setCurrentTime: style.setCurrentTime,
+    setFormat: style.setFormat,
+    setClipStatus,
+    setLoading,
+  });
   useEffect(
     () => () => {
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -245,19 +277,39 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
     },
     [timerRef, pollRef]
   );
-
   const handleClipTrimmed = useCallback(
     (id: string, ns: number, ne: number) => {
       if (id !== clipId) return;
-      fields.setStartSec(ns);
-      fields.setEndSec(ne);
-      fields.setCurrentTime(ns);
+      setStartSec(ns);
+      setEndSec(ne);
+      style.setCurrentTime(ns);
       schedulePatch({ start_sec: ns, end_sec: ne });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [clipId, schedulePatch]
+    [clipId, schedulePatch, style]
   );
-
-  // Spread fields (data, loading, startSec…) then override clipStatus with export-managed one
-  return { ...fields, exporting, clipStatus, schedulePatch, handleExport, handleClipTrimmed };
+  return {
+    data,
+    loading,
+    startSec,
+    endSec,
+    title,
+    captionPosition: style.captionPosition,
+    captionSize: style.captionSize,
+    format: style.format,
+    currentTime: style.currentTime,
+    videoDuration: style.videoDuration,
+    exporting,
+    clipStatus,
+    setStartSec,
+    setEndSec,
+    setTitle,
+    setCaptionPosition: style.setCaptionPosition,
+    setCaptionSize: style.setCaptionSize,
+    setFormat: style.setFormat,
+    setCurrentTime: style.setCurrentTime,
+    setVideoDuration: style.setVideoDuration,
+    schedulePatch,
+    handleExport,
+    handleClipTrimmed,
+  };
 }
