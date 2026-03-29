@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { Artifact, Clip, StatusData } from "./types";
 import {
   makeHandleRetry,
@@ -259,6 +259,16 @@ export function useProjectData(id: string): ProjectDataResult {
   useClipsPolling({ dataStatus: data?.status, clips, id, clipsStatus, fetchClips, setClipsStatus });
   useAutoSelectClips(clips, s.setSelectedClipIds);
   useExportPolling(clips, fetchClips);
+
+  // Refresh presigned URLs every 6 hours while the page is open (they expire at 7h)
+  useEffect(() => {
+    if (data?.status !== "completed") return;
+    const interval = setInterval(
+      () => loadArtifacts(null), // pass null to force a re-fetch
+      6 * 60 * 60 * 1000
+    );
+    return () => clearInterval(interval);
+  }, [data?.status, loadArtifacts]);
 
   const lr: LocalRefs = { selectedClipIdRef, durationRef, isLoopingRef, isPreviewingRef, clipsRef };
   const projectHandlers = buildProjectHandlers({

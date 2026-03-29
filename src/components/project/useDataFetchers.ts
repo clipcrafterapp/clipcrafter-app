@@ -14,8 +14,8 @@ interface ArtifactSetters {
 export function useLoadArtifacts(id: string, setters: ArtifactSetters) {
   const { setArtifacts, setVideoUrl, setIsYouTube, setYouTubeVideoId } = setters;
   return useCallback(
-    (artifacts: Record<string, Artifact> | null) => {
-      if (artifacts) return;
+    (_artifacts: Record<string, Artifact> | null) => {
+      // Always fetch fresh — presigned URLs expire after 7h and must be refreshed
       fetch(`/api/projects/${id}/artifacts`)
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
