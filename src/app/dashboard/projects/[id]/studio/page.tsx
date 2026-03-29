@@ -127,7 +127,6 @@ function StudioPlayer() {
           isYouTube={p.isYouTube}
           youTubeVideoId={p.youTubeVideoId}
           videoRef={p.videoRef}
-          timelineRef={p.timelineRef}
           sortedClips={p.sortedClips}
           selectedClipId={p.selectedClipId}
           clips={p.clips}
@@ -142,8 +141,12 @@ function StudioPlayer() {
           onTimeUpdate={p.handleTimeUpdate}
           onLoadedMetadata={p.handleLoadedMetadata}
           onSetIsPlaying={p.setIsPlaying}
-          onTimelineClick={p.handleTimelineClick}
-          onHandleMouseDown={p.handleHandleMouseDown}
+          onSeek={(s) => {
+            if (p.videoRef.current) p.videoRef.current.currentTime = s;
+          }}
+          onClipTrimmed={(clipId, startSec, endSec) => {
+            p.handleClipAction(clipId, { start_sec: startSec, end_sec: endSec });
+          }}
           onTogglePlay={p.togglePlay}
           onSkipPrev={p.skipPrev}
           onSkipNext={p.skipNext}
