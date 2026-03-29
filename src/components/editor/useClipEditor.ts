@@ -17,9 +17,20 @@ export interface ClipEditorState {
   startSec: number;
   endSec: number;
   title: string;
+  captions: ClipCaption[];
+  captionStyle: "hormozi" | "modern" | "neon" | "minimal";
+  setCaptionStyle: (v: "hormozi" | "modern" | "neon" | "minimal") => void;
   captionPosition: "top" | "center" | "bottom";
   captionSize: "sm" | "md" | "lg";
   format: "9:16" | "16:9";
+  cropMode: "contain" | "cover" | "face" | "custom";
+  cropX: number;
+  cropY: number;
+  cropZoom: number;
+  setCropMode: (v: "contain" | "cover" | "face" | "custom") => void;
+  setCropX: (v: number) => void;
+  setCropY: (v: number) => void;
+  setCropZoom: (v: number) => void;
   currentTime: number;
   videoDuration: number;
   exporting: boolean;
@@ -27,6 +38,7 @@ export interface ClipEditorState {
   setStartSec: (v: number) => void;
   setEndSec: (v: number) => void;
   setTitle: (v: string) => void;
+  setCaptions: (v: ClipCaption[]) => void;
   setCaptionPosition: (v: "top" | "center" | "bottom") => void;
   setCaptionSize: (v: "sm" | "md" | "lg") => void;
   setFormat: (v: "9:16" | "16:9") => void;
@@ -110,10 +122,15 @@ function useExportManager(
     setExporting(true);
     setClipStatus("exporting");
     try {
+      const exportPayload = getExportPayload();
       const res = await fetch(`/api/projects/${projectId}/clips/export-batch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clipIds: [clipId], withCaptions: true }),
+        body: JSON.stringify({
+          clipIds: [clipId],
+          withCaptions: true,
+          captions: exportPayload.captions,
+        }),
       });
       if (!res.ok) {
         const err = (await res.json()) as { error?: string };
@@ -164,7 +181,10 @@ function useClipLoader(
     setTitle: (v: string) => void;
     setCurrentTime: (v: number) => void;
     setFormat: (v: "9:16" | "16:9") => void;
+    setCaptionStyle: (v: "hormozi" | "modern" | "neon" | "minimal") => void;
     setClipStatus: (v: Clip["status"]) => void;
+    setCaptions: (v: ClipCaption[]) => void;
+    setVideoDuration: (v: number) => void;
     setLoading: (v: boolean) => void;
   }
 ) {
@@ -175,7 +195,10 @@ function useClipLoader(
     setTitle,
     setCurrentTime,
     setFormat,
+    setCaptionStyle,
     setClipStatus,
+    setCaptions,
+    setVideoDuration,
     setLoading,
   } = setters;
   useEffect(() => {
@@ -191,7 +214,13 @@ function useClipLoader(
         setTitle(d.clip.clip_title ?? d.clip.title ?? "");
         setCurrentTime(d.clip.start_sec);
         setClipStatus(d.clip.status);
+        setCaptions(d.captions);
+        // Use clip end_sec as the video duration fallback (Remotion Player manages its own playback)
+        setVideoDuration(d.clip.end_sec);
         if ((d.clip as Clip & { aspect_ratio?: string }).aspect_ratio === "16:9") setFormat("16:9");
+        const style = (d.clip as Clip & { caption_style?: string }).caption_style;
+        if (style && ["hormozi", "modern", "neon", "minimal"].includes(style))
+          setCaptionStyle(style as "hormozi" | "modern" | "neon" | "minimal");
       })
       .catch(() => toast.error("Failed to load clip"))
       .finally(() => setLoading(false));
@@ -204,7 +233,10 @@ function useClipLoader(
     setTitle,
     setCurrentTime,
     setFormat,
+    setCaptionStyle,
     setClipStatus,
+    setCaptions,
+    setVideoDuration,
     setLoading,
   ]);
 }
@@ -212,18 +244,35 @@ function useClipLoader(
 // ── Main hook ─────────────────────────────────────────────────────────────────
 
 function useEditorStyleState() {
+  const [captionStyle, setCaptionStyle] = useState<"hormozi" | "modern" | "neon" | "minimal">(
+    "hormozi"
+  );
   const [captionPosition, setCaptionPosition] = useState<"top" | "center" | "bottom">("bottom");
   const [captionSize, setCaptionSize] = useState<"sm" | "md" | "lg">("md");
   const [format, setFormat] = useState<"9:16" | "16:9">("9:16");
+  const [cropMode, setCropMode] = useState<"contain" | "cover" | "face" | "custom">("cover");
+  const [cropX, setCropX] = useState(50);
+  const [cropY, setCropY] = useState(50);
+  const [cropZoom, setCropZoom] = useState(1);
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   return {
+    captionStyle,
+    setCaptionStyle,
     captionPosition,
     setCaptionPosition,
     captionSize,
     setCaptionSize,
     format,
     setFormat,
+    cropMode,
+    setCropMode,
+    cropX,
+    setCropX,
+    cropY,
+    setCropY,
+    cropZoom,
+    setCropZoom,
     currentTime,
     setCurrentTime,
     videoDuration,
@@ -238,6 +287,7 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
   const [startSec, setStartSec] = useState(0);
   const [endSec, setEndSec] = useState(0);
   const [title, setTitle] = useState("");
+  const [captions, setCaptions] = useState<ClipCaption[]>([]);
   const style = useEditorStyleState();
   const { timerRef, schedulePatch } = usePatchScheduler(projectId, clipId);
   const { startSecRef, endSecRef, titleRef, formatRef } = useStableRefs(
@@ -246,12 +296,17 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
     title,
     style.format
   );
+  const captionsRef = useRef<ClipCaption[]>([]);
+  useEffect(() => {
+    captionsRef.current = captions;
+  }, [captions]);
   const getExportPayload = useCallback(
     () => ({
       clip_title: titleRef.current,
       start_sec: startSecRef.current,
       end_sec: endSecRef.current,
       aspect_ratio: formatRef.current,
+      captions: captionsRef.current,
     }),
     [titleRef, startSecRef, endSecRef, formatRef]
   );
@@ -267,7 +322,10 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
     setTitle,
     setCurrentTime: style.setCurrentTime,
     setFormat: style.setFormat,
+    setCaptionStyle: style.setCaptionStyle,
     setClipStatus,
+    setCaptions,
+    setVideoDuration: style.setVideoDuration,
     setLoading,
   });
   useEffect(
@@ -293,6 +351,9 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
     startSec,
     endSec,
     title,
+    captions,
+    captionStyle: style.captionStyle,
+    setCaptionStyle: style.setCaptionStyle,
     captionPosition: style.captionPosition,
     captionSize: style.captionSize,
     format: style.format,
@@ -303,9 +364,18 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
     setStartSec,
     setEndSec,
     setTitle,
+    setCaptions,
     setCaptionPosition: style.setCaptionPosition,
     setCaptionSize: style.setCaptionSize,
     setFormat: style.setFormat,
+    cropMode: style.cropMode,
+    cropX: style.cropX,
+    cropY: style.cropY,
+    cropZoom: style.cropZoom,
+    setCropMode: style.setCropMode,
+    setCropX: style.setCropX,
+    setCropY: style.setCropY,
+    setCropZoom: style.setCropZoom,
     setCurrentTime: style.setCurrentTime,
     setVideoDuration: style.setVideoDuration,
     schedulePatch,

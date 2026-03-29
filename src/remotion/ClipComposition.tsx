@@ -2,9 +2,8 @@
  * Remotion composition for rendering a video clip with captions.
  * Props are injected at render time by the Inngest export job.
  */
-import React, { useMemo } from "react";
-import { AbsoluteFill, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from "remotion";
-import { createTikTokStyleCaptions, type Caption } from "@remotion/captions";
+import React from "react";
+import { AbsoluteFill, OffthreadVideo, Sequence, useVideoConfig } from "remotion";
 
 // ── Caption style presets ─────────────────────────────────────────────────────
 
@@ -39,13 +38,6 @@ const CAPTION_STYLES: Record<string, React.CSSProperties> = {
   },
 };
 
-const HIGHLIGHT_COLORS: Record<string, string> = {
-  hormozi: "#FFD700",
-  modern: "#7c3aed",
-  neon: "#ffffff",
-  minimal: "#e2c97e",
-};
-
 // ── Caption position / size presets ──────────────────────────────────────────
 
 const CAPTION_POSITION_STYLES: Record<string, React.CSSProperties> = {
@@ -56,7 +48,12 @@ const CAPTION_POSITION_STYLES: Record<string, React.CSSProperties> = {
     paddingRight: "5%",
   },
   center: { justifyContent: "center", paddingLeft: "5%", paddingRight: "5%" },
-  top: { justifyContent: "flex-start", paddingTop: "10%", paddingLeft: "5%", paddingRight: "5%" },
+  top: {
+    justifyContent: "flex-start",
+    paddingTop: "10%",
+    paddingLeft: "5%",
+    paddingRight: "5%",
+  },
 };
 
 const CAPTION_FONT_SIZES: Record<string, number> = {
@@ -74,8 +71,11 @@ export interface ClipCompositionProps {
   startSec: number;
   /** Clip end in seconds (into the source video) */
   endSec: number;
-  /** Caption segments (already filtered to the clip range) */
-  captions: Caption[];
+  /**
+   * Caption segments — timing must be 0-based ms (clip start = 0ms).
+   * Each segment is shown during [startMs, endMs).
+   */
+  captions: Array<{ startMs: number; endMs: number; text: string }>;
   /** Caption style name */
   captionStyle: "hormozi" | "modern" | "neon" | "minimal";
   /** Whether to show captions */
@@ -86,28 +86,33 @@ export interface ClipCompositionProps {
   captionSize?: "sm" | "md" | "lg";
   /** Output aspect ratio */
   aspectRatio?: "9:16" | "16:9" | "1:1";
+  /**
+   * Video crop/zoom mode:
+   * - "contain": letterbox/pillarbox, full video visible (default)
+   * - "cover": auto-crop to fill canvas, centered
+   * - "face": crop to fill, anchored to top (keeps faces in frame for portrait)
+   * - "custom": use cropX / cropY / cropZoom for manual control
+   */
+  cropMode?: "contain" | "cover" | "face" | "custom";
+  /** Custom crop X position 0–100 (left–right), only used when cropMode="custom" */
+  cropX?: number;
+  /** Custom crop Y position 0–100 (top–bottom), only used when cropMode="custom" */
+  cropY?: number;
+  /** Custom zoom level 1–3, only used when cropMode="custom" */
+  cropZoom?: number;
 }
 
-// ── Caption page renderer ─────────────────────────────────────────────────────
+// ── Single caption renderer ───────────────────────────────────────────────────
 
-const SWITCH_EVERY_MS = 1500;
-
-function CaptionPage({
-  page,
+function CaptionItem({
+  text,
   style,
-  highlightColor,
   captionPosition = "bottom",
 }: {
-  page: ReturnType<typeof createTikTokStyleCaptions>["pages"][number];
+  text: string;
   style: React.CSSProperties;
-  highlightColor: string;
   captionPosition?: "top" | "center" | "bottom";
 }) {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const currentMs = (frame / fps) * 1000;
-  const absoluteMs = page.startMs + currentMs;
-
   return (
     <AbsoluteFill
       style={{
@@ -126,26 +131,42 @@ function CaptionPage({
           ...style,
         }}
       >
-        {page.tokens.map((token) => {
-          const isActive = token.fromMs <= absoluteMs && token.toMs > absoluteMs;
-          return (
-            <span
-              key={token.fromMs}
-              style={{
-                color: isActive ? highlightColor : undefined,
-                transition: "color 80ms",
-              }}
-            >
-              {token.text}
-            </span>
-          );
-        })}
+        {text}
       </div>
     </AbsoluteFill>
   );
 }
 
 // ── Main composition ──────────────────────────────────────────────────────────
+
+function getVideoStyle(
+  cropMode: ClipCompositionProps["cropMode"],
+  cropX: number,
+  cropY: number,
+  cropZoom: number
+): React.CSSProperties {
+  if (cropMode === "contain") {
+    return { width: "100%", height: "100%", objectFit: "contain" };
+  }
+  if (cropMode === "cover") {
+    return { width: "100%", height: "100%", objectFit: "cover", objectPosition: "50% 50%" };
+  }
+  if (cropMode === "face") {
+    // Anchor to top-center — keeps face/head in frame for portrait videos
+    return { width: "100%", height: "100%", objectFit: "cover", objectPosition: "50% 15%" };
+  }
+  // custom: use transform scale + translate for precise zoom/pan
+  const scale = Math.max(1, cropZoom);
+  const tx = (cropX - 50) * (scale - 1) * -1;
+  const ty = (cropY - 50) * (scale - 1) * -1;
+  return {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    transform: `scale(${scale}) translate(${tx / scale}%, ${ty / scale}%)`,
+    transformOrigin: "center center",
+  };
+}
 
 export const ClipComposition: React.FC<ClipCompositionProps> = ({
   videoSrc,
@@ -156,25 +177,21 @@ export const ClipComposition: React.FC<ClipCompositionProps> = ({
   withCaptions,
   captionPosition = "bottom",
   captionSize = "md",
+  cropMode = "contain",
+  cropX = 50,
+  cropY = 50,
+  cropZoom = 1,
 }) => {
   const { fps } = useVideoConfig();
   const clipDuration = endSec - startSec;
-
-  const { pages } = useMemo(
-    () =>
-      createTikTokStyleCaptions({
-        captions,
-        combineTokensWithinMilliseconds: SWITCH_EVERY_MS,
-      }),
-    [captions]
-  );
 
   const baseStyle = CAPTION_STYLES[captionStyle] ?? CAPTION_STYLES.hormozi;
   const style: React.CSSProperties = {
     ...baseStyle,
     fontSize: CAPTION_FONT_SIZES[captionSize] ?? CAPTION_FONT_SIZES.md,
   };
-  const highlightColor = HIGHLIGHT_COLORS[captionStyle] ?? "#FFD700";
+
+  const videoStyle = getVideoStyle(cropMode, cropX, cropY, cropZoom);
 
   return (
     <AbsoluteFill style={{ background: "#000" }}>
@@ -183,28 +200,23 @@ export const ClipComposition: React.FC<ClipCompositionProps> = ({
         src={videoSrc}
         startFrom={Math.round(startSec * fps)}
         endAt={Math.round(endSec * fps)}
-        style={{ width: "100%", height: "100%", objectFit: "contain" }}
+        style={videoStyle}
       />
 
-      {/* Captions overlay */}
+      {/* One Sequence per caption — shown only during [startMs, endMs) */}
       {withCaptions &&
-        pages.map((page, i) => {
-          const nextPage = pages[i + 1] ?? null;
-          const startFrame = Math.round(((page.startMs - startSec * 1000) / 1000) * fps);
-          const endFrame = nextPage
-            ? Math.round(((nextPage.startMs - startSec * 1000) / 1000) * fps)
-            : Math.round(clipDuration * fps);
+        captions.map((caption, i) => {
+          const startFrame = Math.round((caption.startMs / 1000) * fps);
+          const endFrame = Math.min(
+            Math.round((caption.endMs / 1000) * fps),
+            Math.round(clipDuration * fps)
+          );
           const duration = Math.max(1, endFrame - startFrame);
           if (startFrame >= Math.round(clipDuration * fps)) return null;
 
           return (
             <Sequence key={i} from={startFrame} durationInFrames={duration}>
-              <CaptionPage
-                page={page}
-                style={style}
-                highlightColor={highlightColor}
-                captionPosition={captionPosition}
-              />
+              <CaptionItem text={caption.text} style={style} captionPosition={captionPosition} />
             </Sequence>
           );
         })}

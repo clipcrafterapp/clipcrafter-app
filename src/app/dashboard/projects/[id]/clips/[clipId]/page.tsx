@@ -1,10 +1,10 @@
 "use client";
 
-import { use } from "react";
+import { use, useCallback } from "react";
 import Link from "next/link";
 import { TwickTimeline } from "@/components/project/TwickTimeline";
-import { ClipVideoPlayer } from "@/components/editor/ClipVideoPlayer";
-import { ClipEditPanel } from "@/components/editor/ClipEditPanel";
+import { ClipRemotionPlayer } from "@/components/editor/ClipRemotionPlayer";
+import { ClipEditPanel, ClipFramingControls } from "@/components/editor/ClipEditPanel";
 import { useClipEditor } from "@/components/editor/useClipEditor";
 import type { Clip } from "@/components/project/types";
 
@@ -35,6 +35,43 @@ function BackBar({ projectId, title }: { projectId: string; title: string }) {
   );
 }
 
+// ── Player pane ───────────────────────────────────────────────────────────────
+
+function PlayerPane({ editor }: { editor: ReturnType<typeof useClipEditor> }) {
+  return (
+    <div className="lg:w-[60%] bg-gray-950 flex flex-col min-h-0">
+      <div className="bg-black flex items-center justify-center p-4 overflow-hidden flex-1 min-h-[300px]">
+        <div
+          className="w-full h-full flex items-center justify-center"
+          style={{
+            aspectRatio: editor.format === "16:9" ? "16/9" : "9/16",
+            maxHeight: "100%",
+            maxWidth: editor.format === "16:9" ? "100%" : "50%",
+          }}
+        >
+          <ClipRemotionPlayer
+            videoSrc={editor.data!.videoUrl}
+            startSec={editor.startSec}
+            endSec={editor.endSec}
+            captions={editor.captions}
+            captionPosition={editor.captionPosition}
+            captionSize={editor.captionSize}
+            captionStyle={editor.captionStyle}
+            aspectRatio={editor.format}
+            cropMode={editor.cropMode}
+            cropX={editor.cropX}
+            cropY={editor.cropY}
+            cropZoom={editor.cropZoom}
+          />
+        </div>
+      </div>
+      <div className="border-t border-gray-800 px-4 py-3">
+        <ClipFramingControls editor={editor} />
+      </div>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ClipEditorPage({
@@ -44,6 +81,13 @@ export default function ClipEditorPage({
 }) {
   const { id: projectId, clipId } = use(params);
   const editor = useClipEditor(projectId, clipId);
+
+  const handleCaptionEdited = useCallback(
+    (index: number, start: number, end: number) => {
+      editor.setCaptions(editor.captions.map((c, i) => (i === index ? { ...c, start, end } : c)));
+    },
+    [editor]
+  );
 
   if (editor.loading) {
     return (
@@ -70,22 +114,7 @@ export default function ClipEditorPage({
       <BackBar projectId={projectId} title={editor.title} />
 
       <div className="flex flex-col lg:flex-row flex-1 min-h-0">
-        {/* Player — 60% on desktop */}
-        <div className="lg:w-[60%] aspect-video lg:aspect-auto bg-black relative min-h-[200px] lg:min-h-[400px]">
-          <ClipVideoPlayer
-            videoSrc={editor.data.videoUrl}
-            startSec={editor.startSec}
-            endSec={editor.endSec}
-            captions={editor.data.captions}
-            captionPosition={editor.captionPosition}
-            captionSize={editor.captionSize}
-            currentTime={editor.currentTime}
-            onTimeUpdate={editor.setCurrentTime}
-            onDurationLoaded={editor.setVideoDuration}
-          />
-        </div>
-
-        {/* Edit panel — 40% on desktop */}
+        <PlayerPane editor={editor} />
         <ClipEditPanel projectId={projectId} clipId={clipId} editor={editor} />
       </div>
 
@@ -98,6 +127,9 @@ export default function ClipEditorPage({
           selectedTopic={null}
           onSeek={editor.setCurrentTime}
           onClipTrimmed={editor.handleClipTrimmed}
+          captions={editor.captions}
+          clipStartSec={editor.startSec}
+          onCaptionEdited={handleCaptionEdited}
         />
       )}
     </div>

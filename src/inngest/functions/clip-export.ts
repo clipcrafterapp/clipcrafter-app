@@ -11,11 +11,19 @@ import { r2Client, R2_BUCKET } from "@/lib/r2";
 import { logAiUsage } from "@/lib/aiUsageLogger";
 const execFileAsync = promisify(execFile);
 
+interface CustomCaption {
+  start: number; // clip-relative seconds
+  end: number;
+  text: string;
+}
+
 export interface ClipExportEventData {
   clipId: string;
   projectId: string;
   userId: string;
   withCaptions?: boolean;
+  /** Edited captions from the browser editor (clip-relative seconds). When provided, overrides transcript-derived captions. */
+  customCaptions?: CustomCaption[];
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -62,17 +70,28 @@ function stripSpeakerTag(text: string): string {
   return text.replace(/^\[Speaker \d+\]\s*/, "");
 }
 
-/** Convert transcript segments → Remotion Caption format (plain objects, no external type needed) */
+/** Convert transcript segments → Remotion Caption format (0-based ms, relative to clip start) */
 function toCaptions(segments: Segment[], clipStart: number, clipEnd: number) {
   return segments
     .filter((s) => s.end > clipStart && s.start < clipEnd)
     .map((s) => ({
       text: stripSpeakerTag(s.text),
-      startMs: s.start * 1000,
-      endMs: s.end * 1000,
-      timestampMs: s.start * 1000,
+      startMs: (s.start - clipStart) * 1000, // 0-based: clip start = 0ms
+      endMs: (s.end - clipStart) * 1000,
+      timestampMs: (s.start - clipStart) * 1000,
       confidence: 1,
     }));
+}
+
+/** Convert client-edited captions (already clip-relative seconds) → Remotion Caption format (0-based ms) */
+function customCaptionsToRemotionFormat(captions: CustomCaption[], _clipStart: number) {
+  return captions.map((c) => ({
+    text: c.text,
+    startMs: c.start * 1000, // already 0-based from the editor
+    endMs: c.end * 1000,
+    timestampMs: c.start * 1000,
+    confidence: 1,
+  }));
 }
 
 /**
@@ -126,7 +145,7 @@ export async function clipExportHandler(
   event: { data: ClipExportEventData },
   step: { run: (id: string, fn: () => Promise<unknown>) => Promise<unknown> }
 ): Promise<Record<string, unknown>> {
-  const { clipId, projectId, withCaptions = false } = event.data;
+  const { clipId, projectId, withCaptions = false, customCaptions } = event.data;
   const outputPath = path.join(os.tmpdir(), `clipcrafter-export-${clipId}.mp4`);
 
   try {
@@ -207,11 +226,16 @@ export async function clipExportHandler(
     await step.run("trim-and-render", async () => {
       const renderStart = Date.now();
       try {
+        const resolvedCaptions = withCaptions
+          ? customCaptions
+            ? customCaptionsToRemotionFormat(customCaptions, clip.start_sec)
+            : toCaptions(segments, clip.start_sec, clip.end_sec)
+          : [];
         await renderWithRemotion({
           videoSrc: videoUrl,
           startSec: clip.start_sec,
           endSec: clip.end_sec,
-          captions: withCaptions ? toCaptions(segments, clip.start_sec, clip.end_sec) : [],
+          captions: resolvedCaptions,
           captionStyle: clip.caption_style,
           withCaptions,
           captionPosition: "bottom",
