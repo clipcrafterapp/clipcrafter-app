@@ -258,29 +258,6 @@ export function useClipEditor(projectId: string, clipId: string): ClipEditorStat
     [clipId, schedulePatch]
   );
 
-  return {
-    data: fields.data,
-    loading: fields.loading,
-    startSec: fields.startSec,
-    endSec: fields.endSec,
-    title: fields.title,
-    captionPosition: fields.captionPosition,
-    captionSize: fields.captionSize,
-    format: fields.format,
-    currentTime: fields.currentTime,
-    videoDuration: fields.videoDuration,
-    exporting,
-    clipStatus,
-    setStartSec: fields.setStartSec,
-    setEndSec: fields.setEndSec,
-    setTitle: fields.setTitle,
-    setCaptionPosition: fields.setCaptionPosition,
-    setCaptionSize: fields.setCaptionSize,
-    setFormat: fields.setFormat,
-    setCurrentTime: fields.setCurrentTime,
-    setVideoDuration: fields.setVideoDuration,
-    schedulePatch,
-    handleExport,
-    handleClipTrimmed,
-  };
+  // Spread fields (data, loading, startSec…) then override clipStatus with export-managed one
+  return { ...fields, exporting, clipStatus, schedulePatch, handleExport, handleClipTrimmed };
 }
