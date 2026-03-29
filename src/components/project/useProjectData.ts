@@ -102,10 +102,11 @@ interface VideoHandlerOpts {
   clips: Clip[] | null;
   setClips: React.Dispatch<React.SetStateAction<Clip[] | null>>;
   setSelectedClipId: (id: string | null) => void;
+  selectedTopic: string | null;
 }
 
 function buildVideoHandlers(opts: VideoHandlerOpts) {
-  const { s, lr, clips, setClips, setSelectedClipId } = opts;
+  const { s, lr, clips, setClips, setSelectedClipId, selectedTopic } = opts;
   const { videoRef, timelineRef, dragStateRef, previewClipIndexRef, previewClipsRef } = s;
   const { durationRef, isLoopingRef, isPreviewingRef, clipsRef, selectedClipIdRef } = lr;
   const refs = {
@@ -140,6 +141,8 @@ function buildVideoHandlers(opts: VideoHandlerOpts) {
       previewClipIndexRef,
       setIsPreviewing: s.setIsPreviewing,
       setSelectedClipId,
+      selectedClipIds: s.selectedClipIds,
+      selectedTopic,
     }),
     stopPreviewing: () => {
       s.setIsPreviewing(false);
@@ -274,7 +277,7 @@ export function useProjectData(id: string): ProjectDataResult {
     setSelectedTopic,
     s,
   });
-  const videoHandlers = buildVideoHandlers({ s, lr, clips, setClips, setSelectedClipId });
+  const videoHandlers = buildVideoHandlers({ s, lr, clips, setClips, setSelectedClipId, selectedTopic });
   return buildResult(
     s,
     {
