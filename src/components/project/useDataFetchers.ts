@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { Artifact, Clip } from "./types";
 
@@ -14,14 +14,16 @@ interface ArtifactSetters {
 export function useLoadArtifacts(id: string, setters: ArtifactSetters) {
   const { setArtifacts, setVideoUrl, setIsYouTube, setYouTubeVideoId } = setters;
   return useCallback(
-    (_artifacts: Record<string, Artifact> | null) => {
-      // Always fetch fresh — presigned URLs expire after 7h and must be refreshed
+    (opts: { forceRefreshUrl?: boolean } = {}) => {
       fetch(`/api/projects/${id}/artifacts`)
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
           if (!d) return;
           setArtifacts(d.artifacts);
-          if (d.artifacts?.video?.available && d.artifacts.video.url) {
+          // Only update videoUrl on first load or explicit refresh (e.g. 6h interval).
+          // Skipping this on routine status polls prevents the <video> src from
+          // being reset mid-playback (which causes the reload-loop symptom).
+          if (opts.forceRefreshUrl && d.artifacts?.video?.available && d.artifacts.video.url) {
             const url = d.artifacts.video.url;
             setVideoUrl(url);
             const ytMatch = url.match(
@@ -66,4 +68,19 @@ export function buildClipFetcher(args: ClipFetcherArgs) {
     }
     return status;
   };
+}
+
+/** Refresh presigned artifact URLs every 6 hours while the page is open (they expire at 7h). */
+export function useArtifactRefresh(
+  status: string | undefined,
+  loadArtifacts: (opts?: { forceRefreshUrl?: boolean }) => void
+) {
+  useEffect(() => {
+    if (status !== "completed") return;
+    const interval = setInterval(
+      () => loadArtifacts({ forceRefreshUrl: true }),
+      6 * 60 * 60 * 1000
+    );
+    return () => clearInterval(interval);
+  }, [status, loadArtifacts]);
 }
