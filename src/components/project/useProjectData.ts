@@ -239,7 +239,9 @@ export function useProjectData(id: string): ProjectDataResult {
       if (res.ok) {
         const json = await res.json();
         setData(json);
-        if (json.status === "completed") loadArtifacts(artifacts);
+        // forceRefreshUrl only on first load (artifacts === null) — avoids resetting
+        // <video src> mid-playback on subsequent status polls (reload-loop bug)
+        if (json.status === "completed") loadArtifacts({ forceRefreshUrl: artifacts === null });
       }
     } finally {
       setLoading(false);
