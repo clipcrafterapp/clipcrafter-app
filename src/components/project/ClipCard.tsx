@@ -335,16 +335,16 @@ function ClipTopicBadge({
   );
 }
 
-function ClipCardTopRight({
-  clip,
+function ClipCardActions({
   projectId,
+  clip,
   isChecked,
   onToggleCheck,
 }: {
+  projectId: string | undefined;
   clip: Clip;
-  projectId?: string;
   isChecked: boolean;
-  onToggleCheck: (clipId: string, checked: boolean) => void;
+  onToggleCheck: (id: string, v: boolean) => void;
 }) {
   return (
     <div
@@ -408,9 +408,9 @@ export function ClipCard({
       }}
       className={`relative bg-gray-900 border rounded-xl p-4 transition-all cursor-pointer ${clipBorderClass(isSelected, clip.status)}`}
     >
-      <ClipCardTopRight
-        clip={clip}
+      <ClipCardActions
         projectId={projectId}
+        clip={clip}
         isChecked={isChecked}
         onToggleCheck={onToggleCheck}
       />
