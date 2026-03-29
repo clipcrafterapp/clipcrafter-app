@@ -3,6 +3,7 @@
 import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import Link from "next/link";
 import { isAdmin } from "@/lib/admin";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -28,22 +29,22 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <header className="flex items-center gap-6 px-6 py-4 border-b border-gray-800">
         <span className="font-bold text-lg">Admin</span>
         <nav className="flex items-center gap-4 text-sm text-gray-400">
-          <a href="/admin" className="hover:text-white transition-colors">
+          <Link href="/admin" className="hover:text-white transition-colors">
             Overview
-          </a>
-          <a href="/admin/users" className="hover:text-white transition-colors">
+          </Link>
+          <Link href="/admin/users" className="hover:text-white transition-colors">
             Users
-          </a>
-          <a href="/admin/projects" className="hover:text-white transition-colors">
+          </Link>
+          <Link href="/admin/projects" className="hover:text-white transition-colors">
             Projects
-          </a>
+          </Link>
         </nav>
-        <a
+        <Link
           href="/dashboard"
           className="ml-auto text-sm text-gray-400 hover:text-white transition-colors"
         >
           ← Dashboard
-        </a>
+        </Link>
       </header>
       <main className="px-6 py-8 max-w-7xl mx-auto">{children}</main>
     </div>
